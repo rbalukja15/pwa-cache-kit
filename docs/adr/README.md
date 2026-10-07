@@ -3,9 +3,10 @@
 Significant design decisions for `@rbalukja/pwa-cache-kit` are recorded here, one file per decision,
 named `NNNN-short-title.md`.
 
-| ADR                                | Title                                                 | Status   | Date       |
-| ---------------------------------- | ----------------------------------------------------- | -------- | ---------- |
-| [0001](./0001-three-tier-cache.md) | Three cache tiers (memory, SessionStorage, IndexedDB) | Accepted | 2026-10-07 |
+| ADR                                       | Title                                                 | Status   | Date       |
+| ----------------------------------------- | ----------------------------------------------------- | -------- | ---------- |
+| [0001](./0001-three-tier-cache.md)        | Three cache tiers (memory, SessionStorage, IndexedDB) | Accepted | 2026-10-07 |
+| [0002](./0002-cache-api-and-semantics.md) | Cache API and cross-tier semantics                    | Proposed | 2026-10-07 |
 
 ## Process
 
