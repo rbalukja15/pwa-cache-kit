@@ -159,6 +159,9 @@ are a possible later improvement.
 - At write, `freshUntil = now + ttlMs` and `expiresAt = freshUntil + staleWhileRevalidateMs`, each
   stored as absent when infinite (absent compares as `Infinity`). An entry is fresh while
   `now < freshUntil`, stale until `expiresAt`, then expired. There is no sliding expiry.
+- Only `getOrSet` serves stale entries (section 9). `get`, `getSync` and `has` treat a stale entry
+  as a miss and leave it in place, so `staleWhileRevalidateMs` has no visible effect for a
+  namespace read only through them.
 - Reads remove the expired entries they find. The IndexedDB tier also sweeps its `expiresAt` index
   after opening and every `sweepIntervalMs` (default 300000; 0 disables the timer; else an integer
   from 1 to 2^31 - 1), emitting `expire`, and then enforces its budget.

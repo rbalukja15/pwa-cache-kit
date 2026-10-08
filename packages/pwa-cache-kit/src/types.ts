@@ -62,7 +62,10 @@ export interface CacheOptions {
 export interface SetOptions {
   /** How long the value is fresh, in ms: positive or `Infinity`. Default `Infinity`. */
   readonly ttlMs?: number;
-  /** How long it stays usable as stale after that: non-negative or `Infinity`. Default 0. */
+  /**
+   * How long it stays usable as stale after that: non-negative or `Infinity`. Default 0.
+   * Only `getOrSet` serves stale values; `get`, `getSync` and `has` treat them as misses.
+   */
   readonly staleWhileRevalidateMs?: number;
 }
 
