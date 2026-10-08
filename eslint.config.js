@@ -10,12 +10,20 @@ export default tseslint.config(
   ...tseslint.configs.stylisticTypeChecked,
   {
     languageOptions: {
-      globals: { ...globals.browser },
       parserOptions: {
         projectService: { allowDefaultProject: ['*.js'] },
         tsconfigRootDir: import.meta.dirname,
       },
     },
+  },
+  {
+    // Config files run in Node, so they get Node globals instead of browser ones.
+    ignores: ['**/*.config.ts'],
+    languageOptions: { globals: { ...globals.browser } },
+  },
+  {
+    files: ['**/*.config.ts'],
+    languageOptions: { globals: { ...globals.node } },
   },
   {
     files: ['**/*.js'],
