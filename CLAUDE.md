@@ -29,13 +29,13 @@ packages/pwa-cache-kit/   the library (npm workspace, published as @rbalukja/pwa
   src/index.ts            single public entry point: everything exported here is public API
   src/                    implementation only, no tests
   test/                   unit tests mirroring src/: src/a/b.ts -> test/a/b.test.ts
-  test/conformance/       shared TierAdapter conformance suite (#22)
+  test/conformance/       shared TierAdapter conformance suite (planned, #22)
   tsup.config.ts          build config: ESM + .d.ts into dist/
-docs/adr/                 architecture decision records, NNNN-short-title.md (planned, #3)
+docs/adr/                 architecture decision records, NNNN-short-title.md
 demo/                     demo app workspace (planned, #15)
 ```
 
-Entries marked planned, and `test/`, do not exist until the issue that adds them is merged.
+Entries marked planned do not exist until the issue that adds them is merged.
 
 Shared config sits at the root: `tsconfig.base.json` (compiler options), `tsconfig.json`
 (typecheck scope), `eslint.config.js`, `vitest.config.ts`, `.prettierrc.json`.
@@ -49,7 +49,7 @@ npm run build          # tsup: ESM + .d.ts into packages/pwa-cache-kit/dist
 npm run dev            # tsup --watch for the library
 npm test               # vitest run (passes when there are no tests)
 npm run test:watch     # vitest in watch mode
-npm run test:coverage  # vitest with coverage thresholds, as CI runs it (added by #4)
+npm run test:coverage  # vitest with coverage thresholds, as CI runs it
 npm run lint           # eslint . (type-aware: strictTypeChecked + stylisticTypeChecked)
 npm run typecheck      # tsc -p tsconfig.json (noEmit; src, test and config files)
 npm run format:check   # prettier --check .
@@ -128,6 +128,6 @@ staged files. To format by hand, run `npx prettier --write <paths>` on the files
    write an ADR for any new runtime dependency.
 5. Run the CI checks locally, all must pass:
    `npm run format:check && npm run lint && npm run typecheck && npm run build`, then
-   `npm run test:coverage` (CI enforces its coverage thresholds; use `npm test` until #4 lands).
+   `npm run test:coverage` (CI enforces its coverage thresholds).
 6. Open a PR using the PR template, with a Conventional Commits title and `Closes #<n>` in the body.
 7. The issue's acceptance criteria are the definition of done. Check each one before review.
