@@ -4,6 +4,9 @@
 
 Accepted
 
+Amended in part by [ADR-0002](./0002-cache-api-and-semantics.md): the tier policy is per namespace,
+not per key, and outside browser contexts the cache is inert, memory included.
+
 ## Date
 
 2026-10-07
