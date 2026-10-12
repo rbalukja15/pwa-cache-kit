@@ -1,0 +1,35 @@
+{
+  "name": "@rbalukja/pwa-cache-kit",
+  "version": "0.0.0",
+  "description": "Offline-first three-tier cache (memory, SessionStorage, IndexedDB) for PWAs.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rbalukja15/pwa-cache-kit.git",
+    "directory": "packages/pwa-cache-kit"
+  },
+  "keywords": [
+    "pwa",
+    "cache",
+    "offline",
+    "indexeddb",
+    "sessionstorage",
+    "typescript"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  }
+}
