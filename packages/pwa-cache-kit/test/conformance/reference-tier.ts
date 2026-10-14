@@ -28,12 +28,9 @@ interface Stored {
  * opens on a later microtask and evicts in `sweep` like IndexedDB. Its records outlive adapters, as
  * persistent storage does: adapters of the same cache name share them until `reset`.
  */
-export function createReferenceTier<Sync extends boolean>(
-  name: TierName,
-  sync: Sync,
-): Omit<TierHarness<Sync>, 'name'> {
+export function createReferenceTier(name: TierName, sync: boolean): Omit<TierHarness, 'name'> {
   const storage = new Map<string, Records>();
-  let failingWrites = 0;
+  let failing: { count: number; kind: 'quota' | 'other' } = { count: 0, kind: 'quota' };
 
   function recordsOf(cacheName: string): Records {
     let records = storage.get(cacheName);
@@ -45,26 +42,28 @@ export function createReferenceTier<Sync extends boolean>(
   }
 
   function write(records: Records, ns: string, key: string, record: unknown): void {
-    if (failingWrites > 0) {
-      failingWrites--;
-      throw new DOMException('Simulated quota error', 'QuotaExceededError');
+    if (failing.count > 0) {
+      failing.count--;
+      throw failing.kind === 'quota'
+        ? new DOMException('Simulated quota error', 'QuotaExceededError')
+        : new DOMException('Simulated storage error', 'UnknownError');
     }
     put(records, ns, key, record);
   }
 
   return {
-    tier(options?: TierOptions): CreateTierAdapter<Sync> {
+    tier(options?: TierOptions): CreateTierAdapter {
       const budget = tierBudget(name, options);
       return (cacheName, emit) => {
         const records = recordsOf(cacheName);
         const core = createCore(name, records, budget, emit, (ns, key, envelope) => {
           write(records, ns, key, envelope);
         });
-        return (sync ? syncAdapter(core) : asyncAdapter(core)) as TierAdapter<Sync>;
+        return sync ? syncAdapter(core) : asyncAdapter(core);
       };
     },
-    failWrites(count) {
-      failingWrites = count;
+    failWrites(count, kind = 'quota') {
+      failing = { count, kind };
     },
     writeRaw(cacheName, ns, key, kind) {
       const record =
@@ -75,7 +74,7 @@ export function createReferenceTier<Sync extends boolean>(
     },
     reset() {
       storage.clear();
-      failingWrites = 0;
+      failing = { count: 0, kind: 'quota' };
     },
   };
 }
@@ -138,8 +137,11 @@ function createCore(
   function removeEntry(entry: Stored, now: number, reason: 'budget' | 'quota'): void {
     remove(entry.ns, entry.key);
     const { ns: namespace, key, envelope } = entry;
-    if (isExpired(entry, now)) emit({ type: 'expire', namespace, key, tier: name });
-    else emit({ type: 'evict', namespace, key, tier: name, sizeBytes: envelope.sizeBytes, reason });
+    if (isExpired(entry, now)) {
+      if (emit.has('expire')) emit({ type: 'expire', namespace, key, tier: name });
+    } else if (emit.has('evict')) {
+      emit({ type: 'evict', namespace, key, tier: name, sizeBytes: envelope.sizeBytes, reason });
+    }
   }
 
   /** Removes expired entries first, then the least recently written, until `bytes` are freed. */

@@ -2,20 +2,30 @@
 // calls runTierConformance once; tier-agnostic behavior is tested here, not per tier.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CacheError, type CacheErrorCode } from '../../src/errors.js';
-import type { CreateTierAdapter, Envelope, TierAdapter, TierEvent } from '../../src/tier.js';
+import type {
+  CreateTierAdapter,
+  Envelope,
+  TierAdapter,
+  TierEmit,
+  TierEvent,
+} from '../../src/tier.js';
 import type { CacheValue, TierOptions } from '../../src/types.js';
 
 /** How the suite builds and drives one tier. */
-export interface TierHarness<Sync extends boolean = boolean> {
+export interface TierHarness {
   /** Shown in the test names. */
   readonly name: string;
-  /** The tier factory's role: budget options in, an adapter builder for one cache out. */
-  readonly tier: (options?: TierOptions) => CreateTierAdapter<Sync>;
   /**
-   * Makes the tier's next `count` entry writes fail with a quota error from its storage. Tiers
-   * whose storage has no quota (memory) leave it out, which skips the quota cases.
+   * The tier factory's role: budget options in, an adapter builder for one cache out. Invalid
+   * options throw a `TypeError` here or when the builder runs.
    */
-  readonly failWrites?: (count: number) => void;
+  readonly tier: (options?: TierOptions) => CreateTierAdapter;
+  /**
+   * Makes the tier's next `count` entry writes fail in its storage, with a quota error or, for
+   * `'other'`, another storage exception. Tiers whose storage cannot fail (memory) leave it out,
+   * which skips the write failure cases.
+   */
+  readonly failWrites?: (count: number, kind?: 'quota' | 'other') => void;
   /**
    * Puts a record straight into the tier's storage: one that is not a valid envelope, or a valid
    * envelope of a later format. Tiers that cannot hold such records leave it out.
@@ -39,11 +49,19 @@ export function runTierConformance(harness: TierHarness): void {
   describe(`TierAdapter conformance: ${harness.name}`, () => {
     let adapters: TierAdapter[] = [];
     let events: TierEvent[] = [];
+    let listened: ReadonlySet<TierEvent['type']> = new Set();
+    const emit: TierEmit = Object.assign(
+      (event: TierEvent) => {
+        events.push(event);
+      },
+      { has: (type: TierEvent['type']) => listened.has(type) },
+    );
 
     beforeEach(() => {
       vi.useFakeTimers({ toFake: ['Date'] });
       vi.setSystemTime(start);
       events = [];
+      listened = new Set(['expire', 'evict', 'error']);
     });
 
     afterEach(async () => {
@@ -55,12 +73,15 @@ export function runTierConformance(harness: TierHarness): void {
 
     /** A new adapter for a cache no other test uses, unless `cacheName` is given. */
     function create(options?: TierOptions, cacheName = `cache${String(++cacheCount)}`) {
-      const adapter = harness.tier(options)(cacheName, (event) => events.push(event));
+      const adapter = harness.tier(options)(cacheName, emit);
       adapters.push(adapter);
       return adapter;
     }
 
-    /** Writes entries in order, one ms apart, so the first is the least recently written. */
+    /**
+     * Writes entries in order, one ms apart, so the first is the least recently written. The budget
+     * cases read nothing between writes, so memory's least recently used order agrees with it.
+     */
     async function fill(adapter: TierAdapter, ns: string, sizes: Readonly<Record<string, number>>) {
       for (const [key, sizeBytes] of Object.entries(sizes)) {
         vi.advanceTimersByTime(1);
@@ -117,6 +138,31 @@ export function runTierConformance(harness: TierHarness): void {
           expect(() => (result = adapter.set('ns', 'k', tooLarge))).not.toThrow();
           await expect(result).rejects.toBeInstanceOf(CacheError);
         }
+      });
+
+      it('applies each call before it returns, if the tier is sync', ({ skip }) => {
+        const adapter = create({ maxBytes: 100, maxEntryBytes: 50 });
+        if (!isSync(adapter)) {
+          skip('async tiers return Promises');
+          return;
+        }
+
+        adapter.set('ns', 'a', entry('a', { sizeBytes: 50 }));
+        expect(adapter.get('ns', 'a')).toStrictEqual(entry('a', { sizeBytes: 50 }));
+
+        vi.advanceTimersByTime(1);
+        adapter.set('ns', 'b', entry('b', { sizeBytes: 50 }));
+        vi.advanceTimersByTime(1);
+        adapter.set('other', 'c', entry('c'));
+        expect(events).toEqual([evicted(adapter, 'ns', 'a', 50, 'budget')]);
+
+        adapter.delete('ns', 'b');
+        expect(adapter.get('ns', 'b')).toBeUndefined();
+        adapter.clear('other');
+        expect(adapter.keys('other')).toEqual([]);
+        adapter.set('ns', 'd', entry('d'));
+        adapter.clear();
+        expect(adapter.keys('ns')).toEqual([]);
       });
 
       it('emits nothing for the calls it is asked to make, failed ones included', async () => {
@@ -312,7 +358,7 @@ export function runTierConformance(harness: TierHarness): void {
         { maxEntryBytes: 0 },
         { maxBytes: 100, maxEntryBytes: 101 },
       ])('rejects budget options %o with a TypeError', (options) => {
-        expect(() => harness.tier(options)).toThrow(TypeError);
+        expect(() => create(options)).toThrow(TypeError);
       });
 
       it('refuses an entry above maxEntryBytes with ENTRY_TOO_LARGE and changes nothing', async () => {
@@ -353,9 +399,21 @@ export function runTierConformance(harness: TierHarness): void {
         expect(events).toEqual([evicted(adapter, 'ns', 'a', 30, 'budget')]);
       });
 
+      it('orders eviction by the last write, not by key or first write', async () => {
+        const adapter = create({ maxBytes: 100, maxEntryBytes: 50 });
+        await fill(adapter, 'ns', { c: 30, d: 30, a: 30 });
+        await fill(adapter, 'ns', { c: 30 });
+        await fill(adapter, 'ns', { b: 30 });
+        await settleBudget(adapter);
+
+        expect(await sortedKeys(adapter, 'ns')).toEqual(['a', 'b', 'c']);
+        expect(events).toEqual([evicted(adapter, 'ns', 'd', 30, 'budget')]);
+      });
+
       it('evicts expired entries before live ones', async () => {
         const adapter = create({ maxBytes: 100, maxEntryBytes: 50 });
         await fill(adapter, 'ns', { a: 30 });
+        vi.advanceTimersByTime(1);
         await adapter.set('ns', 'b', entry('v', { sizeBytes: 30, expiresAt: start + 50 }));
         await fill(adapter, 'ns', { c: 30 });
 
@@ -380,6 +438,35 @@ export function runTierConformance(harness: TierHarness): void {
 
         expect(await sortedKeys(adapter, 'ns')).toEqual(['b', 'c', 'd']);
         expect(events).toEqual([evicted(adapter, 'ns', 'a', 40, 'budget')]);
+      });
+
+      it('frees the bytes of deleted, cleared and evicted entries', async () => {
+        const adapter = create({ maxBytes: 100, maxEntryBytes: 50 });
+        await fill(adapter, 'ns', { a: 30, b: 30, c: 30 });
+        await adapter.delete('ns', 'a');
+        await fill(adapter, 'other', { d: 30, e: 10 });
+        await adapter.clear('other');
+        await fill(adapter, 'ns', { f: 40, g: 1, h: 29 });
+        await settleBudget(adapter);
+
+        expect(await sortedKeys(adapter, 'ns')).toEqual(['c', 'f', 'g', 'h']);
+        expect(events).toEqual([evicted(adapter, 'ns', 'b', 30, 'budget')]);
+      });
+
+      it('emits only the event types someone listens for, and still evicts', async () => {
+        const adapter = create({ maxBytes: 100, maxEntryBytes: 50 });
+        listened = new Set(['expire']);
+        await fill(adapter, 'ns', { a: 30 });
+        vi.advanceTimersByTime(1);
+        await adapter.set('ns', 'b', entry('v', { sizeBytes: 30, expiresAt: start + 50 }));
+        await fill(adapter, 'ns', { c: 30 });
+
+        vi.setSystemTime(start + 50);
+        await fill(adapter, 'ns', { d: 30, e: 30 });
+        await settleBudget(adapter);
+
+        expect(await sortedKeys(adapter, 'ns')).toEqual(['c', 'd', 'e']);
+        expect(events).toEqual([{ type: 'expire', namespace: 'ns', key: 'b', tier: adapter.name }]);
       });
 
       it('never evicts the entry being written, if the tier evicts in set', async ({ skip }) => {
@@ -424,14 +511,15 @@ export function runTierConformance(harness: TierHarness): void {
       });
     });
 
-    describe.skipIf(!harness.failWrites)('quota errors', () => {
-      const failWrites = (count: number) => {
-        harness.failWrites?.(count);
+    describe.skipIf(!harness.failWrites)('write failures', () => {
+      const failWrites = (count: number, kind?: 'quota' | 'other') => {
+        harness.failWrites?.(count, kind);
       };
 
-      it('makes room, expired entries first, and retries once', async () => {
+      it('makes room on a quota error, expired entries first, and retries once', async () => {
         const adapter = create();
         await fill(adapter, 'ns', { a: 30 });
+        vi.advanceTimersByTime(1);
         await adapter.set('ns', 'b', entry('v', { sizeBytes: 30, expiresAt: start + 50 }));
         await fill(adapter, 'ns', { c: 30 });
         vi.setSystemTime(start + 50);
@@ -459,6 +547,21 @@ export function runTierConformance(harness: TierHarness): void {
         expect(await adapter.get('ns', 'b')).toBeUndefined();
         await adapter.set('ns', 'b', entry('b', { sizeBytes: 30 }));
         expect(await adapter.keys('ns')).toEqual(['b']);
+      });
+
+      it('fails with STORAGE_FAILED on another storage error, making no room', async () => {
+        const adapter = create();
+        await fill(adapter, 'ns', { a: 30 });
+
+        failWrites(1, 'other');
+        const error = await failure(() => adapter.set('ns', 'b', entry('b', { sizeBytes: 30 })));
+
+        expectCacheError(error, 'STORAGE_FAILED', adapter, 'ns', 'b');
+        expect((error as CacheError).cause).toBeDefined();
+        expect(await adapter.keys('ns')).toEqual(['a']);
+        expect(events).toEqual([]);
+        await adapter.set('ns', 'b', entry('b', { sizeBytes: 30 }));
+        expect(await sortedKeys(adapter, 'ns')).toEqual(['a', 'b']);
       });
     });
 
@@ -537,6 +640,10 @@ async function settle(call: () => unknown): Promise<void> {
   } catch {
     // Expected.
   }
+}
+
+function isSync(adapter: TierAdapter): adapter is TierAdapter<true> {
+  return adapter.sync;
 }
 
 function isThenable(value: unknown): boolean {

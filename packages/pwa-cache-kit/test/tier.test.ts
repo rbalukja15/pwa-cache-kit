@@ -31,9 +31,10 @@ describe('readEnvelope', () => {
     });
   });
 
-  it('reports a record of a later integer format as newer', () => {
+  it('reports a record of any format above 1 as newer', () => {
     expect(readEnvelope({ format: 2 })).toBe('newer');
     expect(readEnvelope({ ...valid, format: 7 })).toBe('newer');
+    expect(readEnvelope({ ...valid, format: 1.5 })).toBe('newer');
   });
 
   it.each([
@@ -42,7 +43,6 @@ describe('readEnvelope', () => {
     ['an array', [valid]],
     ['no format', { ...valid, format: undefined }],
     ['format 0', { ...valid, format: 0 }],
-    ['a fractional format', { ...valid, format: 1.5 }],
     ['a string format', { ...valid, format: '1' }],
     ['no value', { ...valid, value: undefined }],
     ['schemaVersion 0', { ...valid, schemaVersion: 0 }],
@@ -53,6 +53,7 @@ describe('readEnvelope', () => {
     ['an infinite expiresAt', { ...valid, expiresAt: Infinity }],
     ['a negative sizeBytes', { ...valid, sizeBytes: -1 }],
     ['a string sizeBytes', { ...valid, sizeBytes: '24' }],
+    ['an infinite sizeBytes', { ...valid, sizeBytes: Infinity }],
   ])('reports a record with %s as corrupt', (_, record) => {
     expect(readEnvelope(record)).toBe('corrupt');
   });
@@ -93,6 +94,7 @@ describe('tierBudget', () => {
 describe('isQuotaError', () => {
   it.each([
     new DOMException('full', 'QuotaExceededError'),
+    { name: 'QuotaExceededError' },
     { name: 'NS_ERROR_DOM_QUOTA_REACHED' },
     { name: 'Error', code: 22 },
     { name: 'Error', code: 1014 },

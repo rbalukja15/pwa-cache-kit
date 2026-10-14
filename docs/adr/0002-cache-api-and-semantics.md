@@ -303,7 +303,9 @@ The orchestrator reaches tiers only through `TierAdapter<Sync extends boolean>`:
 `sweep?()` and `close()`. With `sync: true` (memory, session) the methods return directly, which
 keeps `getSync` possible; with `sync: false` (indexeddb) they return Promises. A tier factory's
 result carries an internal `create(cacheName, emit)` that builds the adapter for one cache. Adapters
-own budgets, eviction and quota handling and emit `evict` and `expire` for their own removals.
+own budgets, eviction and quota handling and emit `evict` and `expire` for their own removals, only
+when `emit.has(type)` reports a listener (section 11). Only the orchestrator calls `sweep()`: once
+after creating the adapter, then every `sweepIntervalMs`; adapters never sweep on their own.
 Failures are `CacheError`s; `get` removes a corrupt entry before failing with `CORRUPT_ENTRY` and
 never treats `format > 1` as corrupt. `get` returns an entry whatever its expiry: on a read the
 orchestrator applies section 3, removing an expired copy with `delete` and emitting `expire`.
@@ -311,19 +313,19 @@ Adapters act on expiry only in eviction and the sweep, which the conformance sui
 
 ### 18. Ownership
 
-| Issue | Implements                                                                               |
-| ----- | ---------------------------------------------------------------------------------------- |
-| #7    | `createCache`, `TieredCache`, `CacheNamespace`: sections 1 to 5, 8 (on read), 10, 13, 15 |
-| #9    | the memory adapter and the size estimate (sections 6 and 14)                             |
-| #10   | the session adapter: encoding, key prefix, availability, quota errors (sections 13, 14)  |
-| #11   | the IndexedDB adapter: schema, open, timeout, reopen and sweep (sections 8, 13 and 14)   |
-| #12   | budgets, eviction and the quota path (sections 6 and 7)                                  |
-| #13   | migrations (section 14)                                                                  |
-| #19   | the package format (section 16)                                                          |
-| #22   | the adapter contract and its conformance suite (section 17)                              |
-| #23   | event dispatch (section 11)                                                              |
-| #24   | the channel, its messages and back/forward cache handling (section 12)                   |
-| #25   | `getOrSet` (section 9)                                                                   |
+| Issue | Implements                                                                                           |
+| ----- | ---------------------------------------------------------------------------------------------------- |
+| #7    | `createCache`, `TieredCache`, `CacheNamespace`: sections 1 to 5, 8 (reads, sweep timer), 10, 13, 15  |
+| #9    | the memory adapter, budget and eviction included, and the size estimate (sections 6, 7, 14)          |
+| #10   | the session adapter: encoding, key prefix, availability, budget, quota (sections 6, 7, 13, 14)       |
+| #11   | the IndexedDB adapter: schema, open, timeout, reopen, sweep, budget, quota (sections 6 to 8, 13, 14) |
+| #12   | end-to-end tests of budgets and quota errors through the cache (sections 4, 6 and 7)                 |
+| #13   | migrations (section 14)                                                                              |
+| #19   | the package format (section 16)                                                                      |
+| #22   | the adapter contract and its conformance suite (section 17)                                          |
+| #23   | event dispatch (section 11)                                                                          |
+| #24   | the channel, its messages and back/forward cache handling (section 12)                               |
+| #25   | `getOrSet` (section 9)                                                                               |
 
 ## Consequences
 

@@ -26,7 +26,11 @@ export type TierResult<Sync extends boolean, T> = Sync extends true ? T : Promis
 export type TierEvent = Extract<CacheEvent, { type: 'expire' | 'evict' | 'error' }>;
 
 /** Reports an adapter's events to the cache's handlers. */
-export type TierEmit = (event: TierEvent) => void;
+export interface TierEmit {
+  (event: TierEvent): void;
+  /** Whether a handler listens for `type`. Adapters build no payload otherwise (section 11). */
+  has(type: TierEvent['type']): boolean;
+}
 
 /**
  * The only way the orchestrator reaches a tier (ADR-0002 section 17).
@@ -51,9 +55,10 @@ export interface TierAdapter<Sync extends boolean = boolean> {
    */
   get(ns: string, key: string): TierResult<Sync, Envelope | 'newer' | undefined>;
   /**
-   * Stores the envelope, replacing the key's previous one, and evicts when over budget. Fails
-   * with `ENTRY_TOO_LARGE` above `maxEntryBytes` (changing nothing), `QUOTA_EXCEEDED` after the
-   * quota retry, `SERIALIZATION_FAILED` or `STORAGE_FAILED`.
+   * Stores the envelope, replacing the key's previous one. A sync tier then evicts down to
+   * `maxBytes`, sparing this entry; an async tier leaves that to `sweep`. Fails with
+   * `ENTRY_TOO_LARGE` above `maxEntryBytes` (changing nothing), `QUOTA_EXCEEDED` after the quota
+   * retry, `SERIALIZATION_FAILED` or `STORAGE_FAILED`.
    */
   set(ns: string, key: string, envelope: Envelope): TierResult<Sync, void>;
   /** Removes the key; a missing key is not an error. */
@@ -62,7 +67,11 @@ export interface TierAdapter<Sync extends boolean = boolean> {
   clear(ns?: string): TierResult<Sync, void>;
   /** The namespace's keys, unordered, expired ones included. */
   keys(ns: string): TierResult<Sync, string[]>;
-  /** Removes expired entries (emitting `expire`), then enforces the budget. */
+  /**
+   * Removes expired entries (emitting `expire`), then enforces the budget. Only the orchestrator
+   * calls it: once after creating the adapter, then every `sweepIntervalMs`. Adapters never sweep
+   * on their own.
+   */
   sweep?(): TierResult<Sync, void>;
   /** Releases the tier's resources. Idempotent. */
   close(): void;
@@ -121,12 +130,12 @@ export function isQuotaError(error: unknown): boolean {
 
 /**
  * Checks a record read back from storage: an `Envelope` if it is a valid format-1 envelope,
- * `'newer'` if a later library version wrote it, else `'corrupt'`.
+ * `'newer'` if its format is above 1 (a later library version wrote it), else `'corrupt'`.
  */
 export function readEnvelope(record: unknown): Envelope | 'newer' | 'corrupt' {
   if (typeof record !== 'object' || record === null) return 'corrupt';
   const { format } = record as { format?: unknown };
-  if (typeof format === 'number' && Number.isInteger(format) && format > 1) return 'newer';
+  if (typeof format === 'number' && format > 1) return 'newer';
   if (format !== 1) return 'corrupt';
   const entry = record as Partial<Record<keyof Envelope, unknown>>;
   const valid =
