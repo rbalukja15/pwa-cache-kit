@@ -29,7 +29,7 @@ packages/pwa-cache-kit/   the library (npm workspace, published as @rbalukja/pwa
   src/index.ts            single public entry point: everything exported here is public API
   src/                    implementation only, no tests
   test/                   unit tests mirroring src/: src/a/b.ts -> test/a/b.test.ts
-  test/conformance/       shared TierAdapter conformance suite (planned, #22)
+  test/conformance/       shared TierAdapter conformance suite and reference tier (#22)
   tsup.config.ts          build config: ESM + .d.ts into dist/
 docs/adr/                 architecture decision records, NNNN-short-title.md
 demo/                     demo app workspace (planned, #15)
