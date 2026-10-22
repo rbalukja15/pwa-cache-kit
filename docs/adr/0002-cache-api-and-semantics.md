@@ -140,9 +140,11 @@ are a possible later improvement.
 
 ### 7. Eviction
 
-- Order: expired entries first, then least recently used. Memory uses exact LRU (`Map` re-insertion
-  on hit, write and promotion). Session and IndexedDB use least recently written: `updatedAt`, set
-  by writes and promotions only, so a hit never writes just to refresh recency.
+- Order: expired entries first, then least recently used. Memory uses LRU by `Map` re-insertion on
+  every write and promotion and on every read that returns its copy; adapters do not act on expiry
+  in `get`, so a stale or newer-schema read refreshes recency too. Session and IndexedDB use least
+  recently written: `updatedAt`, set by writes and promotions only, so a hit never writes just to
+  refresh recency.
 - Memory and session evict synchronously in the write that exceeds `maxBytes`, down to `maxBytes`,
   sparing the entry being written; IndexedDB does the same in its sweep. Each removal emits `expire`
   or `evict` reason budget.
