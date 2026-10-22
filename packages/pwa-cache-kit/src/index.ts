@@ -1,4 +1,6 @@
-// Public API, designed in ADR-0002. createCache and the tier factories land in #7 onwards.
+// Public API, designed in ADR-0002. sessionTier and indexedDBTier land in #10 and #11.
+export { createCache } from './cache.js';
+export { memoryTier } from './memory.js';
 export { CacheError, CacheWriteError } from './errors.js';
 export type { CacheErrorCode, CacheErrorOptions } from './errors.js';
 export type { CacheEvent, CacheEventHandler, CacheEventType } from './events.js';

@@ -28,8 +28,8 @@ interface KeyFields<T extends CacheEventType> {
   readonly tier: TierName;
 }
 
-// The cache has no implementation until #7, so these scenarios are only type-checked
-// (by `npm run typecheck`), never called.
+// These scenarios are only type-checked (by `npm run typecheck`), never called: some lines are
+// meant to fail to compile. test/cache.test.ts checks inference against a real cache.
 function namespaceScenario(cache: TieredCache, ticket: Ticket): void {
   const tickets = cache.namespace<Ticket>('tickets', { tiers: ['memory', 'indexeddb'] });
 
