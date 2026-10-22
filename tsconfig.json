@@ -4,5 +4,11 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["packages/*/src", "packages/*/test", "packages/*/*.config.ts", "*.config.ts"]
+  "include": [
+    "packages/*/src",
+    "packages/*/test",
+    "packages/*/e2e",
+    "packages/*/*.config.ts",
+    "*.config.ts"
+  ]
 }
