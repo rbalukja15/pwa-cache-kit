@@ -1,5 +1,6 @@
 import type { CacheError } from './errors.js';
 import type { CacheEventHandler, CacheEventType } from './events.js';
+import type { tierBrand } from './tier-config.js';
 
 /** A cache tier, from fastest to most durable (ADR-0001). */
 export type TierName = 'memory' | 'session' | 'indexeddb';
@@ -29,10 +30,6 @@ export interface IndexedDBTierOptions extends TierOptions {
   /** Time to open or reopen the database: an integer from 1 to 2^31 - 1 ms. Default 3000. */
   readonly openTimeoutMs?: number;
 }
-
-// Type-only brand for now: #7 replaces it with a real, non-exported `Symbol` whose property holds
-// the factory's `create(cacheName, emit)`, so factories need no cast.
-declare const tierBrand: unique symbol;
 
 /** An opaque tier description: only `memoryTier`, `sessionTier` and `indexedDBTier` create one. */
 export interface TierConfig<N extends TierName = TierName> {

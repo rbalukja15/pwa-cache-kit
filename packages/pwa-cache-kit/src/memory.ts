@@ -1,8 +1,16 @@
-// The memory tier's adapter (ADR-0002 sections 6, 7, 14 and 17). Not exported from index.ts: the
-// public `memoryTier` factory wraps it once #7 gives tier configs their internal `create`.
+// The memory tier (ADR-0002 sections 6, 7, 14 and 17): the public `memoryTier` factory and its
+// internal adapter.
 import { CacheError } from './errors.js';
+import { tierConfig } from './tier-config.js';
 import { tierBudget, type CreateTierAdapter, type Envelope, type TierAdapter } from './tier.js';
-import type { TierOptions } from './types.js';
+import type { TierFactory, TierOptions } from './types.js';
+
+/**
+ * The memory tier: entries live in this document or worker and are lost on reload.
+ * @throws {TypeError} for invalid budget options.
+ */
+export const memoryTier: TierFactory<'memory'> = (options) =>
+  tierConfig('memory', memoryAdapter(options));
 
 /** Separates the namespace from the key; names cannot contain it, keys may. */
 const SEPARATOR = '\u0000';
