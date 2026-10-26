@@ -36,7 +36,9 @@ interface Stored {
  * `pwa-cache-kit:<cache>:<ns>:<key>` with the envelope's JSON as value (section 14). The adapter
  * keeps an index of its cache's entries to track usage; it builds the index on the first write and
  * rebuilds it from storage before each eviction, so entries another instance of the same cache
- * wrote in this tab are counted there.
+ * wrote in this tab are counted there. Between evictions the index sees only this adapter's
+ * writes, so two long-lived instances of one cache in a tab can together exceed `maxBytes` until
+ * one of them evicts: the budget is exact per instance, approximate across instances.
  * @throws {TypeError} for invalid budget options (see `tierBudget`).
  */
 export function sessionAdapter(options?: TierOptions): CreateTierAdapter<true> {
@@ -175,13 +177,16 @@ export function sessionAdapter(options?: TierOptions): CreateTierAdapter<true> {
       index.set(id, describe(ns, key, envelope));
       usage += envelope.sizeBytes;
       if (usage > maxBytes) {
-        attempt(
-          () => {
-            evict(store, id, 'budget', () => usage <= maxBytes);
-          },
-          ns,
-          key,
-        );
+        // The entry is stored, so the write succeeds whatever happens here: exceeding maxBytes
+        // never rejects (section 6). A failed eviction is reported, and the next write retries it.
+        try {
+          evict(store, id, 'budget', () => usage <= maxBytes);
+        } catch (cause) {
+          if (emit.has('error')) {
+            const failure = error('STORAGE_FAILED', 'eviction failed', ns, key, cause);
+            emit({ type: 'error', error: failure, tier: 'session', namespace: ns, key });
+          }
+        }
       }
     }
 

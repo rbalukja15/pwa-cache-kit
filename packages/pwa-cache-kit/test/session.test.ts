@@ -246,6 +246,49 @@ describe('session adapter', () => {
     }).toThrow(expect.objectContaining({ code: 'STORAGE_FAILED' }) as unknown);
   });
 
+  it('keeps a write whose budget eviction fails, and reports the failure', () => {
+    const adapter = sessionAdapter({ maxBytes: 100, maxEntryBytes: 60 })('app', emit);
+    adapter.set('ns', 'a', entry('v', 60));
+    const broken = new Error('storage broke');
+    vi.spyOn(storage, 'removeItem').mockImplementation(() => {
+      throw broken;
+    });
+
+    const written = entry('v', 60);
+    expect(() => {
+      adapter.set('ns', 'b', written);
+    }).not.toThrow();
+
+    expect(adapter.get('ns', 'b')).toEqual(written);
+    expect(events).toEqual([
+      {
+        type: 'error',
+        tier: 'session',
+        namespace: 'ns',
+        key: 'b',
+        error: expect.objectContaining({ code: 'STORAGE_FAILED', cause: broken }) as unknown,
+      },
+    ]);
+  });
+
+  it('reports a failed budget eviction only to error listeners', () => {
+    const silent: TierEmit = Object.assign(
+      (event: TierEvent) => {
+        events.push(event);
+      },
+      { has: () => false },
+    );
+    const adapter = sessionAdapter({ maxBytes: 100, maxEntryBytes: 60 })('app', silent);
+    adapter.set('ns', 'a', entry('v', 60));
+    vi.spyOn(storage, 'removeItem').mockImplementation(() => {
+      throw new Error('storage broke');
+    });
+
+    adapter.set('ns', 'b', entry('v', 60));
+
+    expect(events).toEqual([]);
+  });
+
   it('fails with STORAGE_FAILED when the retry fails for another reason', () => {
     const adapter = sessionAdapter()('app', emit);
     storage.failing = { count: 1, kind: 'quota' };
