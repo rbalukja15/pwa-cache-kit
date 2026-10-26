@@ -191,6 +191,8 @@ rejects every joined caller with its error and caches nothing; in the background
   exception), `TIER_UNAVAILABLE`, `CORRUPT_ENTRY` and `MIGRATION_FAILED` (copy removed),
   `LOADER_FAILED` (background load, stale entry kept) and `CLOSED` (after `close()`).
 - Every tier error is emitted once as an `error` event; `CLOSED` and `WRITE_FAILED` never are.
+  `TIER_UNAVAILABLE` is not emitted per operation: the cache emits it once per tier when the tier
+  turns unavailable (section 13), whatever operations then fail on it.
   Without listeners failures are silent, so the README recommends a listener during development.
 
 ### 11. Events

@@ -417,12 +417,21 @@ describe('indexedDBTier in a cache', () => {
     second.close();
   });
 
-  it('only shows a tier unavailable from the start in status', () => {
+  it('only shows a tier unavailable from the start in status, emitting nothing', async () => {
     vi.spyOn(factory, 'open').mockImplementation(() => {
       throw new DOMException('Blocked', 'SecurityError');
     });
     const cache = createCache({ name: 'app', tiers: [indexedDBTier()], sweepIntervalMs: 0 });
+    const errors: CacheError[] = [];
+    cache.on('error', (event) => errors.push(event.error));
+    const ns = cache.namespace('n', { tiers: ['indexeddb'] });
+
+    await expect(ns.get('k')).resolves.toBeUndefined();
+    await expect(ns.set('k', 'v')).resolves.toEqual({ stored: [], errors: [] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     expect(cache.status()).toEqual({ indexeddb: 'unavailable' });
+    expect(errors).toEqual([]);
     cache.close();
   });
 

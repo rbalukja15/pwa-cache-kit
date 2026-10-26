@@ -79,11 +79,19 @@ test('sweeps expired entries when a cache is created', async ({ page }) => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     const second = createCache({ name: 'sweep', tiers: [indexedDBTier()] });
-    const keys = await new Promise<string[]>((resolve) => {
-      second.on('expire', (event) => {
-        resolve([event.key]);
-      });
-    });
+    // Resolves [] if no expire event arrives, so a failure shows the keys instead of a timeout.
+    const keys = await Promise.race([
+      new Promise<string[]>((resolve) => {
+        second.on('expire', (event) => {
+          resolve([event.key]);
+        });
+      }),
+      new Promise<string[]>((resolve) => {
+        setTimeout(() => {
+          resolve([]);
+        }, 5_000);
+      }),
+    ]);
     second.close();
     return keys;
   });

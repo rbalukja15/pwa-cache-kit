@@ -594,13 +594,16 @@ describe('write path', () => {
     });
   });
 
-  it('skips tiers that are unavailable', async () => {
+  it('skips tiers that are unavailable, emitting nothing for them', async () => {
     const down = scriptedTier('session', { status: 'unavailable' });
     const cache = createCache({ name: 'app', tiers: [memoryTier(), down.config] });
+    const errors = record(cache, ['error']);
     await expect(
       cache.namespace('n', { tiers: ['memory', 'session'] }).set('k', 'v'),
     ).resolves.toEqual({ stored: ['memory'], errors: [] });
     expect(cache.status()).toEqual({ memory: 'available', session: 'unavailable' });
+    await settle();
+    expect(errors).toEqual([]);
   });
 });
 
@@ -880,6 +883,28 @@ describe('tier status', () => {
     expect(cache.status()).toEqual({ memory: 'available', session: 'unavailable' });
     await settle();
     expect(errors).toHaveLength(2);
+  });
+
+  it('leaves an adapter TIER_UNAVAILABLE failure to the status report', async () => {
+    let status: TierStatus = 'available';
+    const closing = scriptedTier('session', {
+      get status() {
+        return status;
+      },
+      get: () => {
+        status = 'unavailable';
+        throw new CacheError('TIER_UNAVAILABLE', 'gone', { tier: 'session' });
+      },
+    });
+    const cache = createCache({ name: 'app', tiers: [closing.config] });
+    const events = record(cache, ['miss', 'error']);
+
+    await expect(cache.namespace('n', { tiers: ['session'] }).get('k')).resolves.toBeUndefined();
+    await settle();
+
+    expect(events.map((event) => event.type)).toEqual(['miss', 'error']);
+    expect(events[0]).toMatchObject({ reason: 'error' });
+    expect(events[1]).toMatchObject({ error: { code: 'TIER_UNAVAILABLE', tier: 'session' } });
   });
 });
 

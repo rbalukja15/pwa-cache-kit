@@ -100,9 +100,9 @@ staged files. To format by hand, run `npx prettier --write <paths>` on the files
   it. The tsup dts build sets `ignoreDeprecations: '6.0'` because tsup passes `baseUrl`.
 - `npm run typecheck` covers only the root `tsconfig.json` `include` (`packages/*/src`,
   `packages/*/test`, `packages/*/e2e`, `packages/*/*.config.ts`, `*.config.ts`), and type-aware lint
-  fails on TS files that no tsconfig includes. Add new TS locations such as `demo/` to that `include`. A separate
-  tsconfig makes lint pass but is not typechecked unless it is also wired into `npm run typecheck`
-  (e.g. `tsc -b` with project references).
+  fails on TS files that no tsconfig includes. Add new TS locations such as `demo/` to that
+  `include`. A separate tsconfig makes lint pass but is not typechecked unless it is also wired into
+  `npm run typecheck` (e.g. `tsc -b` with project references).
 - vitest only runs `packages/*/{src,test}/**/*.test.ts`. Update `vitest.config.ts` for other paths.
   Playwright runs `packages/pwa-cache-kit/e2e/*.spec.ts` (`playwright.config.ts`).
 - `.js` files get browser plus Node globals and have type-aware rules off, but are still parsed

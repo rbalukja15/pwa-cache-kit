@@ -95,6 +95,8 @@ export function indexedDBAdapter(options?: IndexedDBTierOptions): CreateTierAdap
           if (settled || closed) {
             // Late or no longer wanted: never keep a connection that could block another context.
             connection.close();
+            // After a timeout this changes nothing (`settled` guards it); after close() it settles
+            // the open as failed.
             fail();
             return;
           }
