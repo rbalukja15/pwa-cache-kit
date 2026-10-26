@@ -30,6 +30,7 @@ packages/pwa-cache-kit/   the library (npm workspace, published as @rbalukja/pwa
   src/                    implementation only, no tests
   test/                   unit tests mirroring src/: src/a/b.ts -> test/a/b.test.ts
   test/conformance/       shared TierAdapter conformance suite and reference tier (#22)
+  e2e/                    Playwright smoke tests of the built library in real browsers (#11)
   tsup.config.ts          build config: ESM + .d.ts into dist/
 docs/adr/                 architecture decision records, NNNN-short-title.md
 demo/                     demo app workspace (planned, #15)
@@ -50,10 +51,15 @@ npm run dev            # tsup --watch for the library
 npm test               # vitest run (passes when there are no tests)
 npm run test:watch     # vitest in watch mode
 npm run test:coverage  # vitest with coverage thresholds, as CI runs it
+npm run test:e2e       # build, then Playwright smoke tests in Chromium, Firefox and WebKit
 npm run lint           # eslint . (type-aware: strictTypeChecked + stylisticTypeChecked)
 npm run typecheck      # tsc -p tsconfig.json (noEmit; src, test and config files)
 npm run format:check   # prettier --check .
 ```
+
+`test:e2e` needs Playwright's browsers (`npx playwright install chromium firefox webkit`). Where
+only another Chromium build is installed, run one project with
+`CHROMIUM_EXECUTABLE=<path> npx playwright test --project=chromium` after `npm run build`.
 
 Single file or test: `npx vitest run packages/pwa-cache-kit/test/<file>.test.ts` or
 `npx vitest run -t "<test name>"`.
@@ -93,11 +99,12 @@ staged files. To format by hand, run `npx prettier --write <paths>` on the files
 - TypeScript is pinned to `~6.0` because typescript-eslint does not support 7.x yet. Do not bump
   it. The tsup dts build sets `ignoreDeprecations: '6.0'` because tsup passes `baseUrl`.
 - `npm run typecheck` covers only the root `tsconfig.json` `include` (`packages/*/src`,
-  `packages/*/test`, `packages/*/*.config.ts`, `*.config.ts`), and type-aware lint fails on TS files
-  that no tsconfig includes. Add new TS locations such as `demo/` to that `include`. A separate
-  tsconfig makes lint pass but is not typechecked unless it is also wired into `npm run typecheck`
-  (e.g. `tsc -b` with project references).
+  `packages/*/test`, `packages/*/e2e`, `packages/*/*.config.ts`, `*.config.ts`), and type-aware lint
+  fails on TS files that no tsconfig includes. Add new TS locations such as `demo/` to that
+  `include`. A separate tsconfig makes lint pass but is not typechecked unless it is also wired into
+  `npm run typecheck` (e.g. `tsc -b` with project references).
 - vitest only runs `packages/*/{src,test}/**/*.test.ts`. Update `vitest.config.ts` for other paths.
+  Playwright runs `packages/pwa-cache-kit/e2e/*.spec.ts` (`playwright.config.ts`).
 - `.js` files get browser plus Node globals and have type-aware rules off, but are still parsed
   through the project service, which only accepts root-level `.js` files
   (`allowDefaultProject: ['*.js']`). A `.js` file in a subfolder (e.g. a demo service worker) fails

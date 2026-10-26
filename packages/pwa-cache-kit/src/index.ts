@@ -1,5 +1,6 @@
-// Public API, designed in ADR-0002. indexedDBTier lands in #11.
+// Public API, designed in ADR-0002.
 export { createCache } from './cache.js';
+export { indexedDBTier } from './indexeddb.js';
 export { memoryTier } from './memory.js';
 export { sessionTier } from './session.js';
 export { CacheError, CacheWriteError } from './errors.js';

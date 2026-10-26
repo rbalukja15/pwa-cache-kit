@@ -72,8 +72,13 @@ export const createCache: CreateCache = (options) => {
     emitter.emit(event);
   }
 
-  function emitError(error: CacheError): void {
+  /**
+   * Emits a failure. An adapter's `TIER_UNAVAILABLE` is left out: `watchStatus` reports a tier
+   * that turned unavailable once, whatever the operations that then fail on it.
+   */
+  function emitError(error: CacheError, fromStatus = false): void {
     if (!emitter.has('error')) return;
+    if (error.code === 'TIER_UNAVAILABLE' && !fromStatus) return;
     const { namespace, key, tier } = error;
     send({ type: 'error', error, ...defined({ namespace, key, tier }) });
   }
@@ -96,7 +101,7 @@ export const createCache: CreateCache = (options) => {
           tier: tier.name,
         });
         queueMicrotask(() => {
-          emitError(error);
+          emitError(error, true);
         });
       }
       tier.seen = status;
