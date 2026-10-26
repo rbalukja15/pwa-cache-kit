@@ -37,9 +37,10 @@ Which tiers to pick for which data is covered in the
 [decision guide](./docs/decision-guide.md), and why there are three tiers in
 [ADR-0001](./docs/adr/0001-three-tier-cache.md).
 
-## Planned API
+## Usage
 
-A sketch of the API from ADR-0002. It does not work yet.
+The full API and its semantics are specified in
+[ADR-0002](./docs/adr/0002-cache-api-and-semantics.md). `getOrSet` is not implemented yet (#25).
 
 ```ts
 import { createCache, indexedDBTier, memoryTier } from '@rbalukja/pwa-cache-kit';
@@ -62,6 +63,45 @@ const tickets = cache.namespace<Ticket>('tickets', {
 await tickets.set('t1', { id: 't1', seat: '12A' });
 const cached = await tickets.get('t1'); // Ticket | undefined
 ```
+
+## Events
+
+`cache.on(type, handler)` subscribes to one event type and returns a function that unsubscribes;
+`cache.off(type, handler)` does the same. The cache inspector is built on these events only.
+
+```ts
+const off = cache.on('hit', (event) => {
+  console.log(`${event.namespace}/${event.key} served by ${event.tier}`);
+});
+off();
+```
+
+Every event has a `type`, and all but `error` and a whole-cache `clear` carry the `namespace`, `key`
+and `tier` they are about. The other fields depend on the type:
+
+| Type      | Emitted when a tier                   | Extra fields                                                           |
+| --------- | ------------------------------------- | ---------------------------------------------------------------------- |
+| `hit`     | serves a fresh value                  | `sizeBytes`, `freshUntil?`, `expiresAt?`                               |
+| `miss`    | walked by a read has no fresh value   | `reason`: absent, stale, expired, newer, invalid, error                |
+| `set`     | stores a value                        | `sizeBytes`, `freshUntil?`, `expiresAt?`, `reason`: set, load, migrate |
+| `promote` | receives a copy of a lower tier's hit | `from`, `sizeBytes`, `freshUntil?`, `expiresAt?`                       |
+| `delete`  | is told to remove a key               | `reason`: delete, remote                                               |
+| `clear`   | is told to clear a namespace or cache | `reason`: clear, remote; no `namespace` or `key` for the whole cache   |
+| `expire`  | removes an expired entry              |                                                                        |
+| `evict`   | removes a live entry to make room     | `sizeBytes`, `reason`: budget, quota                                   |
+| `error`   | fails                                 | `error` (a `CacheError`); `namespace`, `key` and `tier` when known     |
+
+`sizeBytes` is the entry's estimated size. `freshUntil` and `expiresAt` are times in ms since the
+epoch, absent when the copy never goes stale or never expires; subtract `Date.now()` for the time
+to live left. `delete` and `clear` are emitted for every tier the call covers, whether or not that
+tier held anything.
+
+A read that misses memory and is served by IndexedDB emits `miss` (memory), `hit` (indexeddb), then
+`promote` (memory, `from: 'indexeddb'`). Handlers run synchronously, in the order the effects
+happen and in registration order, and each handler is called once per event even if registered
+twice. A handler that throws is reported through `reportError` and does not break the operation
+or the other handlers. When a type has no handler the cache builds no event for it, so unused
+events cost nothing.
 
 ## Server-side rendering
 
