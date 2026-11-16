@@ -2,13 +2,21 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    // The demo imports the library by name; resolve it to the sources, so lint and typecheck do
+    // not depend on a build of dist/.
+    "paths": { "@rbalukja/pwa-cache-kit": ["./packages/pwa-cache-kit/src/index.ts"] }
   },
   "include": [
     "packages/*/src",
     "packages/*/test",
     "packages/*/e2e",
     "packages/*/*.config.ts",
+    "demo/src",
+    "demo/build",
+    "demo/test",
+    "demo/e2e",
+    "demo/*.config.ts",
     "*.config.ts"
   ]
 }
