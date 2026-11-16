@@ -124,7 +124,9 @@ staged files. To format by hand, run `npx prettier --write <paths>` on the files
   features and fixes bump the patch, since `^0.x.y` ranges with x >= 1 only accept patch updates.
   The first public release is 0.1.0, because `^0.0.y` accepts no updates at all.
 - Changesets drive versions and the changelog. Every user-facing library change includes a
-  changeset (`npx changeset`) with that bump; docs, tests, CI and tooling changes need none.
+  changeset (`npx changeset`) with that bump; docs, tests, CI and tooling changes need none. CI
+  fails a PR that changes `src/` or the package's `package.json` without one; use
+  `npx changeset --empty` when such a change has no user-facing effect.
   `npm run version-packages` turns pending changesets into the new `version` and
   `packages/pwa-cache-kit/CHANGELOG.md`, so neither is ever edited by hand. Before 1.0, never pick
   `major` in a changeset: it would publish 1.0.0.
