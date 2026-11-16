@@ -21,10 +21,12 @@ interface WorkerScope {
 
 const worker = self as unknown as WorkerScope;
 
-// The demo's Vite plugin (vite.config.ts) replaces the placeholder with the files of this build,
-// and the __SHELL_VERSION__ token with a hash of that list.
+// The build (build/service-worker.ts) replaces the placeholder with the files of this build, and
+// the __SHELL_VERSION__ token with a hash of their names and contents.
 const PRECACHE = '__PRECACHE_MANIFEST__' as unknown as readonly string[];
-const SHELL = 'shell-__SHELL_VERSION__';
+// Caches are shared by every app on the origin, so the prefix names this app.
+const PREFIX = 'ticket-wallet-shell-';
+const SHELL = `${PREFIX}__SHELL_VERSION__`;
 
 const scope = new URL(worker.registration.scope);
 const shellUrls = PRECACHE.map((path) => new URL(path, scope).href);
@@ -45,7 +47,7 @@ worker.addEventListener('activate', (event) => {
       .then((names) =>
         Promise.all(
           names
-            .filter((name) => name.startsWith('shell-') && name !== SHELL)
+            .filter((name) => name.startsWith(PREFIX) && name !== SHELL)
             .map((name) => caches.delete(name)),
         ),
       )

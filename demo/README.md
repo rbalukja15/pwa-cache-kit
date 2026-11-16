@@ -12,7 +12,7 @@ shows your tickets without a network connection.
 - **Where it came from**: the page listens to the cache's `hit`, `miss` and `set` events and says
   which tier served the tickets: the network on the first visit, SessionStorage after a reload in
   the same tab, and IndexedDB in a new tab or after a restart.
-- **App shell**: `src/sw.ts` is a hand-rolled service worker. The Vite build (`vite.config.ts`)
+- **App shell**: `src/sw.ts` is a hand-rolled service worker. The Vite build (`build/service-worker.ts`)
   writes the names of this build's files into it; it precaches them on install, serves them
   cache-first and drops the caches of older builds on activate. Ticket requests (`api/`) are left
   to the network, since the cache holds the data.

@@ -43,9 +43,11 @@ function render(tickets: readonly Ticket[]): void {
 }
 
 // The cache's events say where each read was served from; the inspector (#16) builds on them too.
-const read: { servedBy?: string } = {};
+const read: { servedBy?: string; offline?: boolean } = {};
 /** Read through a call: the handlers set the field during the awaits, out of the checker's view. */
 const servedBy = (): string | undefined => read.servedBy;
+const wentOffline = (): boolean => read.offline === true;
+const OFFLINE_NOTE = 'Offline: showing your saved tickets.';
 cache.on('hit', (event) => {
   if (event.key === TICKETS_KEY) read.servedBy = `Served from ${TIER_LABELS[event.tier]}.`;
 });
@@ -61,7 +63,9 @@ cache.on('set', (event) => {
 });
 cache.on('error', (event) => {
   if (event.error.code === 'LOADER_FAILED') {
-    source.textContent = 'Offline: showing your saved tickets.';
+    // The background refresh can fail before or after load() writes its message.
+    read.offline = true;
+    source.textContent = OFFLINE_NOTE;
   } else {
     console.warn(event.error);
   }
@@ -69,10 +73,11 @@ cache.on('error', (event) => {
 
 async function load(): Promise<void> {
   delete read.servedBy;
+  delete read.offline;
   try {
     const tickets = await wallet.getOrSet(TICKETS_KEY, fetchTickets);
     render(tickets);
-    source.textContent = servedBy() ?? 'Ready.';
+    source.textContent = wentOffline() ? OFFLINE_NOTE : (servedBy() ?? 'Ready.');
   } catch {
     source.textContent = 'You are offline and no tickets are saved on this device yet.';
   }
