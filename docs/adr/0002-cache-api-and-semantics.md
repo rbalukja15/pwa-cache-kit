@@ -298,7 +298,9 @@ a failed migration is signalled by its `error` event only.
 ### 16. Package format
 
 ESM only (no CommonJS build), `sideEffects: false`, no runtime dependencies, and no storage, channel
-or timer access at import time: all of it starts in `createCache`.
+or timer access at import time: all of it starts in `createCache`. The in-page inspector (#16) is a
+second entry point, `@rbalukja/pwa-cache-kit/inspector`, so the core bundle never carries it; it
+reads a cache only through `on` and `status()`, and touches the DOM only in `createInspector`.
 
 ### 17. Tier adapter contract
 
@@ -325,6 +327,7 @@ Adapters act on expiry only in eviction and the sweep, which the conformance sui
 | #11   | the IndexedDB adapter: schema, open, timeout, reopen, sweep, budget, quota (sections 6 to 8, 13, 14) |
 | #12   | end-to-end tests of budgets and quota errors through the cache (sections 4, 6 and 7)                 |
 | #13   | migrations (section 14)                                                                              |
+| #16   | the inspector entry point (section 16), built on the events of section 11                            |
 | #19   | the package format (section 16)                                                                      |
 | #22   | the adapter contract and its conformance suite (section 17)                                          |
 | #23   | event dispatch (section 11)                                                                          |

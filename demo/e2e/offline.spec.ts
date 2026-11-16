@@ -2,7 +2,7 @@
 // cache serves the tickets. Runs against `vite preview` of the built demo (playwright.config.ts).
 import { expect, test, type Page } from '@playwright/test';
 
-const TICKETS = 3;
+const TICKETS = 8;
 
 /** Waits until the service worker controls the page, so later loads go through it. */
 async function waitForServiceWorker(page: Page): Promise<void> {
@@ -51,6 +51,12 @@ test('loads once, then renders the tickets offline after a reload and in a new t
 test('says so when the first visit is offline and nothing is saved', async ({ context, page }) => {
   await page.goto('/');
   await waitForServiceWorker(page);
+  // Let the page finish caching each ticket, so no write reopens the database after the delete.
+  await expect(
+    page.locator('[data-testid="inspector-log"] li[data-type="set"][data-tier="indexeddb"]', {
+      hasText: 'ticket/TW-9407',
+    }),
+  ).toBeVisible();
   await page.evaluate(async () => {
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.deleteDatabase('pwa-cache-kit:ticket-wallet');

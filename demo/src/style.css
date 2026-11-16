@@ -121,3 +121,19 @@ main {
 .refresh:disabled {
   opacity: 0.6;
 }
+
+.show-code {
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+main {
+  /* Room for the inspector panel docked at the bottom. */
+  padding-bottom: 40vh;
+}
