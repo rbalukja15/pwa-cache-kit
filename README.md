@@ -40,7 +40,7 @@ Which tiers to pick for which data is covered in the
 ## Usage
 
 The full API and its semantics are specified in
-[ADR-0002](./docs/adr/0002-cache-api-and-semantics.md). `getOrSet` is not implemented yet (#25).
+[ADR-0002](./docs/adr/0002-cache-api-and-semantics.md).
 
 ```ts
 import { createCache, indexedDBTier, memoryTier } from '@rbalukja/pwa-cache-kit';
@@ -62,6 +62,27 @@ const tickets = cache.namespace<Ticket>('tickets', {
 
 await tickets.set('t1', { id: 't1', seat: '12A' });
 const cached = await tickets.get('t1'); // Ticket | undefined
+```
+
+### Read-through caching with `getOrSet`
+
+`getOrSet(key, loader, options?)` returns the cached value, or calls `loader()` on a miss and
+stores its result, with `options` overriding the namespace's `ttlMs` and `staleWhileRevalidateMs`.
+Concurrent calls for the same key share one load. Once an entry is past its `ttlMs` but still
+within `staleWhileRevalidateMs`, `getOrSet` returns the stale value at once and reloads it in the
+background; a failed background load is reported as an `error` event with code `LOADER_FAILED`,
+and the stale value stays. A loader that fails on a miss rejects every waiting caller and caches
+nothing.
+
+```ts
+const tickets = cache.namespace<Ticket>('tickets', {
+  tiers: ['memory', 'indexeddb'],
+  // Offline-first: refresh after five minutes, but keep serving the last value until then.
+  ttlMs: 5 * 60_000,
+  staleWhileRevalidateMs: Infinity,
+});
+
+const ticket = await tickets.getOrSet('t1', () => fetchTicket('t1'));
 ```
 
 ## Events
