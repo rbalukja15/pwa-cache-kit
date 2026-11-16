@@ -171,8 +171,22 @@ export const createCache: CreateCache = (options) => {
     keyVersions.set(id, (keyVersions.get(id) ?? 0) + 1);
   }
 
+  // A load overtaken by a set, delete or clear still settles for the callers that joined it, but
+  // later calls start their own instead of joining a load whose result will not be stored.
+
+  function forgetLoad(ns: string, key: string): void {
+    loads.delete(queueId(ns, key));
+  }
+
   function detachNamespace(ns: string): void {
     namespaceEpochs.set(ns, (namespaceEpochs.get(ns) ?? 0) + 1);
+    const prefix = ns + SEPARATOR;
+    for (const id of loads.keys()) if (id.startsWith(prefix)) loads.delete(id);
+  }
+
+  function detachCache(): void {
+    cacheEpoch++;
+    loads.clear();
   }
 
   // --- tiers ---------------------------------------------------------------------------------
@@ -452,6 +466,7 @@ export const createCache: CreateCache = (options) => {
     const envelope = prepare('set', defaults, policy, value, options);
     if (inert) return { stored: [], errors: [] };
 
+    forgetLoad(ns, key);
     const outcomes = store(ns, policy, key, envelope, 'set');
     const stored: TierName[] = [];
     const errors: CacheError[] = [];
@@ -651,6 +666,7 @@ export const createCache: CreateCache = (options) => {
   function remove(ns: string, policy: readonly TierName[], key: string): Promise<void> {
     if (inert) return Promise.resolve();
     detachKey(ns, key);
+    forgetLoad(ns, key);
     return removeEverywhere(
       available(policy),
       (tier) => tier.adapter.delete(ns, key),
@@ -666,7 +682,7 @@ export const createCache: CreateCache = (options) => {
 
   function clear(ns?: string): Promise<void> {
     if (inert) return Promise.resolve();
-    if (ns === undefined) cacheEpoch++;
+    if (ns === undefined) detachCache();
     else detachNamespace(ns);
     return removeEverywhere(
       available(configured),

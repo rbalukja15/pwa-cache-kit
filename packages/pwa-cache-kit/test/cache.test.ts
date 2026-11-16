@@ -1145,6 +1145,35 @@ describe('getOrSet', () => {
     await expect(ns.get('k')).resolves.toBe('newer');
   });
 
+  it.each([
+    ['a delete of its key', (_: TieredCache, ns: CacheNamespace<string>) => ns.delete('k')],
+    ['a clear of its namespace', (_: TieredCache, ns: CacheNamespace<string>) => ns.clear()],
+    ['a clear of the cache', (cache: TieredCache) => cache.clear()],
+  ])('starts a new load after %s instead of joining the old one', async (_, overtake) => {
+    const cache = threeTiers();
+    const ns = cache.namespace<string>('n', { tiers: ['memory', 'indexeddb'] });
+    const old = deferred<string>();
+
+    const oldLoader = vi.fn(() => old.promise);
+    const newLoader = vi.fn(() => 'new');
+
+    const first = ns.getOrSet('k', oldLoader);
+    await vi.waitFor(() => {
+      expect(oldLoader).toHaveBeenCalled();
+    });
+    await overtake(cache, ns);
+    const second = ns.getOrSet('k', newLoader);
+    await vi.waitFor(() => {
+      expect(newLoader).toHaveBeenCalled();
+    });
+    old.resolve('old');
+
+    await expect(first).resolves.toBe('old');
+    await expect(second).resolves.toBe('new');
+    await settle();
+    await expect(ns.get('k')).resolves.toBe('new');
+  });
+
   it('returns but does not store a load overtaken by close', async () => {
     const cache = threeTiers();
     const events = record(cache, ['set']);
