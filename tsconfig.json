@@ -14,6 +14,7 @@
     "packages/*/src",
     "packages/*/test",
     "packages/*/e2e",
+    "packages/*/scripts",
     "packages/*/*.config.ts",
     "demo/src",
     "demo/build",

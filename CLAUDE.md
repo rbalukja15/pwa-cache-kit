@@ -32,8 +32,12 @@ packages/pwa-cache-kit/   the library (npm workspace, published as @rbalukja/pwa
   test/                   unit tests mirroring src/: src/a/b.ts -> test/a/b.test.ts
   test/conformance/       shared TierAdapter conformance suite and reference tier (#22)
   e2e/                    Playwright smoke tests of the built library in real browsers (#11)
+  scripts/pack-smoke.ts   packs the library, installs the tarball in a fresh project, imports
+                          and type-checks both entries (`npm run test:pack`, #19)
+  README.md, LICENSE      shipped in the npm tarball with dist/
   tsup.config.ts          build config: ESM + .d.ts into dist/
 docs/adr/                 architecture decision records, NNNN-short-title.md
+docs/releasing.md         how to cut a release (version, tag, publish workflow)
 .changeset/               pending changesets and the changesets config (#19)
 demo/                     offline ticket-wallet PWA (npm workspace, private, built with Vite)
   src/sw.ts               hand-rolled service worker; build/service-worker.ts fills in its
@@ -58,6 +62,7 @@ npm test               # vitest run (passes when there are no tests)
 npm run test:watch     # vitest in watch mode
 npm run test:coverage  # vitest with coverage thresholds, as CI runs it
 npm run test:e2e       # build, then Playwright library and demo tests in 3 browsers
+npm run test:pack      # build, npm pack, install the tarball in a fresh project, import both entries
 npm run lint           # eslint . (type-aware: strictTypeChecked + stylisticTypeChecked)
 npm run typecheck      # tsc -p tsconfig.json (noEmit; src, test and config files)
 npm run format:check   # prettier --check .
@@ -138,6 +143,8 @@ staged files. To format by hand, run `npx prettier --write <paths>` on the files
   `npm run version-packages` turns pending changesets into the new `version` and
   `packages/pwa-cache-kit/CHANGELOG.md`, so neither is ever edited by hand. Before 1.0, never pick
   `major` in a changeset: it would publish 1.0.0.
+- Releases publish from a `v<version>` tag on `main` through `.github/workflows/release.yml`, with
+  npm provenance. Only the maintainer pushes release tags; the steps are in `docs/releasing.md`.
 - No AI attribution in commits, PRs, issues or code: no `Co-Authored-By` trailers, no "Generated
   with" footers, no AI session links.
 

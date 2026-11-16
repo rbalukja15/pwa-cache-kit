@@ -5,9 +5,9 @@
 An offline-first cache for Progressive Web Apps that keeps each value in memory, SessionStorage
 and IndexedDB, and reads it from the fastest tier that has it.
 
-> **Status:** early development. The API is specified in
-> [ADR-0002](./docs/adr/0002-cache-api-and-semantics.md) and is being implemented; nothing is
-> published to npm yet.
+> **Status:** pre-1.0. The API is specified in
+> [ADR-0002](./docs/adr/0002-cache-api-and-semantics.md); releases are published to npm as
+> `@rbalukja/pwa-cache-kit` from version tags ([releasing](./docs/releasing.md)).
 
 ## The three tiers
 

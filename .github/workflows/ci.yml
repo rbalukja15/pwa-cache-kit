@@ -59,6 +59,9 @@ jobs:
       - name: Test with coverage
         run: npm run test:coverage
 
+      - name: Smoke-test the packed tarball
+        run: npm run test:pack
+
       - name: Upload coverage to Codecov
         if: matrix.node-version == '24.x'
         uses: codecov/codecov-action@v7
