@@ -34,7 +34,9 @@ packages/pwa-cache-kit/   the library (npm workspace, published as @rbalukja/pwa
   tsup.config.ts          build config: ESM + .d.ts into dist/
 docs/adr/                 architecture decision records, NNNN-short-title.md
 .changeset/               pending changesets and the changesets config (#19)
-demo/                     demo app workspace (planned, #15)
+demo/                     offline ticket-wallet PWA (npm workspace, private, built with Vite)
+  src/sw.ts               hand-rolled service worker; vite.config.ts injects its precache list
+  e2e/                    Playwright offline test of the built demo, served by `vite preview`
 ```
 
 Entries marked planned do not exist until the issue that adds them is merged.
@@ -47,12 +49,13 @@ Shared config sits at the root: `tsconfig.base.json` (compiler options), `tsconf
 Node 24 (`.nvmrc`), engines `>=22.22.1`. `npm install` also installs the pre-commit hook.
 
 ```sh
-npm run build          # tsup: ESM + .d.ts into packages/pwa-cache-kit/dist
+npm run build          # tsup: ESM + .d.ts into packages/pwa-cache-kit/dist, then the demo into demo/dist
 npm run dev            # tsup --watch for the library
+npm run dev:demo       # Vite dev server for the demo (no service worker; it registers in builds only)
 npm test               # vitest run (passes when there are no tests)
 npm run test:watch     # vitest in watch mode
 npm run test:coverage  # vitest with coverage thresholds, as CI runs it
-npm run test:e2e       # build, then Playwright smoke tests in Chromium, Firefox and WebKit
+npm run test:e2e       # build, then Playwright library and demo tests in Chromium, Firefox and WebKit
 npm run lint           # eslint . (type-aware: strictTypeChecked + stylisticTypeChecked)
 npm run typecheck      # tsc -p tsconfig.json (noEmit; src, test and config files)
 npm run format:check   # prettier --check .
@@ -102,16 +105,17 @@ staged files. To format by hand, run `npx prettier --write <paths>` on the files
 - TypeScript is pinned to `~6.0` because typescript-eslint does not support 7.x yet. Do not bump
   it. The tsup dts build sets `ignoreDeprecations: '6.0'` because tsup passes `baseUrl`.
 - `npm run typecheck` covers only the root `tsconfig.json` `include` (`packages/*/src`,
-  `packages/*/test`, `packages/*/e2e`, `packages/*/*.config.ts`, `*.config.ts`), and type-aware lint
-  fails on TS files that no tsconfig includes. Add new TS locations such as `demo/` to that
-  `include`. A separate tsconfig makes lint pass but is not typechecked unless it is also wired into
+  `packages/*/test`, `packages/*/e2e`, `packages/*/*.config.ts`, `demo/src`, `demo/e2e`,
+  `demo/*.config.ts`, `*.config.ts`), and type-aware lint fails on TS files that no tsconfig
+  includes. Add new TS locations to that `include`. A separate tsconfig makes lint pass but is not typechecked unless it is also wired into
   `npm run typecheck` (e.g. `tsc -b` with project references).
 - vitest only runs `packages/*/{src,test}/**/*.test.ts`. Update `vitest.config.ts` for other paths.
-  Playwright runs `packages/pwa-cache-kit/e2e/*.spec.ts` (`playwright.config.ts`).
+  Playwright runs `packages/*/e2e/*.spec.ts` and `demo/e2e/*.spec.ts` (`playwright.config.ts`),
+  starting `vite preview` of the built demo on port 4174 (reused locally if already running).
 - `.js` files get browser plus Node globals and have type-aware rules off, but are still parsed
   through the project service, which only accepts root-level `.js` files
-  (`allowDefaultProject: ['*.js']`). A `.js` file in a subfolder (e.g. a demo service worker) fails
-  lint until `eslint.config.js` is extended to cover it.
+  (`allowDefaultProject: ['*.js']`). A `.js` file in a subfolder fails lint until
+  `eslint.config.js` is extended to cover it, which is why the demo's service worker is TypeScript.
 
 ## Commits, PRs and releases
 

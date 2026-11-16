@@ -9,6 +9,9 @@
     "packages/*/test",
     "packages/*/e2e",
     "packages/*/*.config.ts",
+    "demo/src",
+    "demo/e2e",
+    "demo/*.config.ts",
     "*.config.ts"
   ]
 }

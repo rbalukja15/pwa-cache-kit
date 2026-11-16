@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "demo"
   ],
   "engines": {
     "node": ">=22.22.1"
@@ -21,7 +22,8 @@
     "format:check": "prettier --check .",
     "changeset": "changeset",
     "version-packages": "changeset version && npm install --package-lock-only",
-    "prepare": "simple-git-hooks"
+    "prepare": "simple-git-hooks",
+    "dev:demo": "npm run dev -w pwa-cache-kit-demo"
   },
   "simple-git-hooks": {
     "pre-commit": "npx lint-staged"

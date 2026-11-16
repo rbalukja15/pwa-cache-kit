@@ -124,6 +124,13 @@ twice. A handler that throws is reported through `reportError` and does not brea
 or the other handlers. When a type has no handler the cache builds no event for it, so unused
 events cost nothing.
 
+## Demo
+
+[`demo/`](./demo) is an offline ticket wallet built on the library. It loads its tickets with
+`getOrSet`, keeps them in all three tiers and opens offline after one visit. Run it with
+`npm run build && npm run preview -w pwa-cache-kit-demo`, or `npm run dev:demo` without the service
+worker. See [demo/README.md](./demo/README.md).
+
 ## Server-side rendering
 
 Outside the browser (Node, SSR and edge runtimes) the cache is inert, the memory tier included:

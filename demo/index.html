@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#1f3a5f" />
+    <meta name="description" content="An offline ticket wallet built on pwa-cache-kit." />
+    <title>Ticket Wallet</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  </head>
+  <body>
+    <header class="bar">
+      <h1>Ticket Wallet</h1>
+      <span class="connection" data-testid="connection" aria-live="polite"></span>
+    </header>
+    <main>
+      <p class="source" data-testid="source" aria-live="polite">Loading your tickets…</p>
+      <ul class="tickets" data-testid="tickets"></ul>
+      <button type="button" class="refresh" data-testid="refresh">Refresh from the network</button>
+    </main>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
