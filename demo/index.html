@@ -18,7 +18,15 @@
     <main>
       <p class="source" data-testid="source" aria-live="polite">Loading your tickets…</p>
       <ul class="tickets" data-testid="tickets"></ul>
-      <button type="button" class="refresh" data-testid="refresh">Refresh from the network</button>
+      <div class="controls">
+        <button type="button" class="refresh" data-testid="refresh">
+          Refresh from the network
+        </button>
+        <label class="pressure">
+          <input type="checkbox" data-testid="pressure" />
+          Simulate storage pressure
+        </label>
+      </div>
     </main>
     <script type="module" src="./src/main.ts"></script>
   </body>

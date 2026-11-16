@@ -22,13 +22,6 @@ export interface InspectorOptions {
   readonly maxLogEntries?: number;
   /** Start collapsed to its header. Default false. */
   readonly collapsed?: boolean;
-  /**
-   * Shows a "Simulate storage pressure" switch that calls this with its new state. The app reacts,
-   * for example by recreating its cache with small budgets and attaching the inspector to it.
-   */
-  readonly onPressureChange?: (enabled: boolean) => void;
-  /** Initial state of the pressure switch. Default false. */
-  readonly pressure?: boolean;
 }
 
 /** A mounted inspector panel. */
@@ -89,20 +82,6 @@ export function createInspector(options: InspectorOptions = {}): CacheInspector 
   status.setAttribute('data-testid', 'inspector-status');
   header.append(title, status);
 
-  const { onPressureChange } = options;
-  if (onPressureChange) {
-    const toggle = element('label', 'toggle');
-    const box = document.createElement('input');
-    box.type = 'checkbox';
-    box.checked = options.pressure === true;
-    box.setAttribute('data-testid', 'inspector-pressure');
-    box.addEventListener('change', () => {
-      onPressureChange(box.checked);
-    });
-    toggle.append(box, 'Simulate storage pressure');
-    header.append(toggle);
-  }
-
   const clearLog = button('Clear log', () => {
     model.clearLog();
     log.replaceChildren();
@@ -112,6 +91,7 @@ export function createInspector(options: InspectorOptions = {}): CacheInspector 
     const collapsed = panel.classList.toggle('collapsed');
     collapse.textContent = collapsed ? 'Show' : 'Hide';
     collapse.setAttribute('aria-expanded', String(!collapsed));
+    if (!collapsed) render();
   });
   collapse.setAttribute('aria-expanded', String(options.collapsed !== true));
   header.append(clearLog, collapse);
@@ -139,9 +119,9 @@ export function createInspector(options: InspectorOptions = {}): CacheInspector 
   let unsubscribe: (() => void)[] = [];
   let lastLogged = 0;
   let scheduled = false;
+  // Ticks TTLs and drops evicted copies; a collapsed panel draws nothing until it opens.
   const timer = setInterval(() => {
-    model.prune(Date.now());
-    render();
+    if (model.prune(Date.now()) || model.rows().length > 0) renderVisible();
   }, TICK_MS);
 
   function handle(event: CacheEvent): void {
@@ -151,8 +131,12 @@ export function createInspector(options: InspectorOptions = {}): CacheInspector 
     // Many events arrive in one operation; draw once after it.
     queueMicrotask(() => {
       scheduled = false;
-      render();
+      renderVisible();
     });
+  }
+
+  function renderVisible(): void {
+    if (!panel.classList.contains('collapsed')) render();
   }
 
   function render(): void {

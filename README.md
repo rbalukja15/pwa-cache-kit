@@ -146,12 +146,11 @@ import { createInspector } from '@rbalukja/pwa-cache-kit/inspector';
 if (import.meta.env.DEV) createInspector().attach(cache);
 ```
 
-`createInspector({ container?, maxLogEntries?, collapsed?, onPressureChange?, pressure? })` mounts
-the panel (in `document.body` by default) and returns `{ attach(cache), detach(), destroy() }`.
-`attach` moves the panel to another cache, for example after recreating it. With
-`onPressureChange`, the panel shows a "Simulate storage pressure" switch and reports its state, so
-the app can recreate its cache with small budgets; the demo does this. Keys written before
-`attach` appear once an event mentions them.
+`createInspector({ container?, maxLogEntries?, collapsed? })` mounts the panel (in
+`document.body` by default) and returns `{ attach(cache), detach(), destroy() }`. `attach` moves
+the panel to another cache, for example after recreating it with other budgets, as the demo's
+"Simulate storage pressure" switch does. Keys written before `attach` appear once an event
+mentions them.
 
 ## Server-side rendering
 

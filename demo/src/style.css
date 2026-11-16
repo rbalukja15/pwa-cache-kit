@@ -137,3 +137,17 @@ main {
   /* Room for the inspector panel docked at the bottom. */
   padding-bottom: 40vh;
 }
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+}
+
+.pressure {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--muted);
+}

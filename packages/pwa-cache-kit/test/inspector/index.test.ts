@@ -139,21 +139,12 @@ describe('createInspector', () => {
     expect(toggle?.getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('reports the pressure switch and moves to a new cache, keeping the log', async () => {
-    const onPressureChange = vi.fn();
-    inspector = createInspector({ onPressureChange, pressure: true });
+  it('moves to a new cache, keeping the log and dropping the keys', async () => {
+    inspector = createInspector();
     const first = memoryCache();
     inspector.attach(first);
     await first.namespace('n', { tiers: ['memory'] }).set('k', 1);
     await settle();
-
-    const box = panel().querySelector<HTMLInputElement>('[data-testid="inspector-pressure"]');
-    expect(box?.checked).toBe(true);
-    if (box) {
-      box.checked = false;
-      box.dispatchEvent(new Event('change'));
-    }
-    expect(onPressureChange).toHaveBeenCalledWith(false);
 
     const second = memoryCache();
     inspector.attach(second);
@@ -165,13 +156,33 @@ describe('createInspector', () => {
     expect(logTypes()).toEqual(['miss:memory', 'set:memory']);
   });
 
-  it('shows no pressure switch without a handler, and marks unavailable tiers', () => {
+  it('marks unavailable tiers', () => {
     inspector = createInspector();
-    expect(panel().querySelector('[data-testid="inspector-pressure"]')).toBeNull();
     const cache = memoryCache();
     vi.spyOn(cache, 'status').mockReturnValue({ memory: 'unavailable' });
     inspector.attach(cache);
     expect(panel().querySelector('.status .tier')?.classList.contains('unavailable')).toBe(true);
+  });
+
+  it('draws nothing while collapsed, and catches up when opened', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(0);
+    inspector = createInspector({ collapsed: true });
+    const cache = memoryCache();
+    inspector.attach(cache);
+    await cache.namespace('n', { tiers: ['memory'] }).set('k', 'v', { ttlMs: 10_000 });
+    await settle();
+    vi.advanceTimersByTime(1_000);
+    expect(logTypes()).toEqual([]);
+
+    const show = [...panel().querySelectorAll('button')].find((b) => b.textContent === 'Show');
+    show?.click();
+    expect(logTypes()).toEqual(['set:memory']);
+    expect(keyRows()).toEqual(['n/k | memory | fresh for 9s | 2 B']);
+
+    vi.setSystemTime(2_000);
+    vi.advanceTimersByTime(1_000);
+    expect(keyRows()).toEqual(['n/k | memory | fresh for 7s | 2 B']);
   });
 
   it('stops listening on detach and removes the panel on destroy', async () => {

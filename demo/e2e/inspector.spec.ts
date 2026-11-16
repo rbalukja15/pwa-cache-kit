@@ -19,10 +19,10 @@ test('shows which tier served each read', async ({ page }) => {
   ).toBeVisible();
   await expect(page.locator(`${log}[data-type="miss"][data-tier="memory"]`).first()).toBeVisible();
 
-  // Opening a ticket is a read of its own key, cached in memory when the list loaded.
+  // Opening a ticket is a read of its own key, cached when the list came from the network.
   await page.getByTestId('show-code').first().click();
   await expect(
-    page.locator(`${log}[data-type="hit"]`, { hasText: 'ticket/TW-4821 served by memory' }),
+    page.locator(`${log}[data-type="hit"]`, { hasText: 'ticket/TW-4821 served by session' }),
   ).toBeVisible();
   await expect(page.locator('[data-key="ticket/TW-4821"]')).toContainText('fresh for');
 });
@@ -34,7 +34,7 @@ test('evicts in every tier under simulated storage pressure', async ({ page }) =
     page.locator(`${log}[data-type="set"][data-tier="indexeddb"]`, { hasText: 'ticket/TW-9407' }),
   ).toBeVisible();
 
-  await page.getByTestId('inspector-pressure').check();
+  await page.getByTestId('pressure').check();
 
   for (const tier of ['memory', 'session', 'indexeddb']) {
     // IndexedDB evicts in its sweep, which runs every two seconds under pressure.

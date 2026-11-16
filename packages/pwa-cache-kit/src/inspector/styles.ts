@@ -64,18 +64,15 @@ header {
   color: #f9fafb;
 }
 header h2 { margin: 0 auto 0 0; font-size: 13px; font-weight: 600; }
-button, label.toggle {
+button {
   font: inherit;
   color: inherit;
   cursor: pointer;
-}
-button {
   padding: 0.125rem 0.5rem;
   border: 1px solid rgb(255 255 255 / 0.3);
   border-radius: 6px;
   background: transparent;
 }
-label.toggle { display: inline-flex; align-items: center; gap: 0.25rem; }
 .status { display: flex; gap: 0.25rem; }
 .body { overflow: auto; padding: 0.5rem 0.75rem 0.75rem; }
 .panel.collapsed .body { display: none; }

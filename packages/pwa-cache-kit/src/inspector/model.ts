@@ -113,8 +113,9 @@ export function createModel(maxLog: number): InspectorModel {
         drop(event.namespace, event.key, event.tier);
         break;
       case 'evict': {
-        const previous = row(event.namespace, event.key).tiers.get(event.tier);
-        row(event.namespace, event.key).tiers.set(event.tier, {
+        const { tiers } = row(event.namespace, event.key);
+        const previous = tiers.get(event.tier);
+        tiers.set(event.tier, {
           sizeBytes: event.sizeBytes,
           freshUntil: previous?.freshUntil,
           expiresAt: previous?.expiresAt,

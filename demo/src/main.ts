@@ -19,6 +19,7 @@ const list = element('tickets');
 const source = element('source');
 const connection = element('connection');
 const refresh = element('refresh') as HTMLButtonElement;
+const pressure = element('pressure') as HTMLInputElement;
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -48,10 +49,17 @@ function render(tickets: readonly Ticket[]): void {
       show.addEventListener('click', () => {
         void wallet.tickets
           .getOrSet(ticket.id, () => ticket)
-          .then((stored) => {
-            code.textContent = stored.code;
+          .then(
+            (stored) => {
+              code.textContent = stored.code;
+              show.hidden = true;
+            },
+            () => {
+              code.textContent = 'Could not read this ticket.';
+            },
+          )
+          .finally(() => {
             code.hidden = false;
-            show.hidden = true;
           });
       });
       item.append(title, details, seat, show, code);
@@ -61,10 +69,11 @@ function render(tickets: readonly Ticket[]): void {
 }
 
 // The cache's events say where each read was served from, as they do for the inspector.
-const read: { servedBy?: string; offline?: boolean } = {};
+const read: { servedBy?: string; offline?: boolean; fromNetwork?: boolean } = {};
 /** Read through a call: the handlers set the field during the awaits, out of the checker's view. */
 const servedBy = (): string | undefined => read.servedBy;
 const wentOffline = (): boolean => read.offline === true;
+const fromNetwork = (): boolean => read.fromNetwork === true;
 const OFFLINE_NOTE = 'Offline: showing your saved tickets.';
 
 function watch(cache: TieredCache): void {
@@ -79,6 +88,7 @@ function watch(cache: TieredCache): void {
   cache.on('set', (event) => {
     if (event.key === LIST_KEY && event.reason === 'load' && event.tier === 'memory') {
       read.servedBy = 'Loaded from the network.';
+      read.fromNetwork = true;
     }
   });
   cache.on('error', (event) => {
@@ -92,19 +102,23 @@ function watch(cache: TieredCache): void {
   });
 }
 
-/** Keeps each ticket under its own key too, so opening one works offline. */
+/**
+ * Keeps each ticket under its own key too, so opening one works offline. Done when the list comes
+ * from the network or the cache was reopened, not on every load, so the tickets' TTLs still run.
+ */
 async function cacheEach(tickets: readonly Ticket[]): Promise<void> {
   for (const ticket of tickets) await wallet.tickets.set(ticket.id, ticket).catch(ignore);
 }
 
-async function load(): Promise<void> {
+async function load(recache = false): Promise<void> {
   delete read.servedBy;
   delete read.offline;
+  delete read.fromNetwork;
   try {
     const tickets = await wallet.list.getOrSet(LIST_KEY, fetchTickets);
     render(tickets);
     source.textContent = wentOffline() ? OFFLINE_NOTE : (servedBy() ?? 'Ready.');
-    await cacheEach(tickets);
+    if (recache || fromNetwork()) await cacheEach(tickets);
   } catch {
     list.replaceChildren();
     source.textContent = 'You are offline and no tickets are saved on this device yet.';
@@ -136,17 +150,19 @@ window.addEventListener('online', showConnection);
 window.addEventListener('offline', showConnection);
 showConnection();
 
-// The inspector reads the cache through its events only. Its pressure switch reopens the cache
-// with small budgets, then loads again, so the writes and the IndexedDB sweep evict.
+// The inspector reads the cache through its events only.
 const inspector = createInspector({
   collapsed: window.matchMedia('(max-width: 40rem)').matches,
-  onPressureChange(pressure) {
-    wallet.cache.close();
-    wallet = openWallet(pressure);
-    watch(wallet.cache);
-    inspector.attach(wallet.cache);
-    void load();
-  },
+});
+
+// Reopens the cache with small budgets (or the defaults), then caches the tickets again, so the
+// writes evict in memory and session and the IndexedDB sweep evicts there.
+pressure.addEventListener('change', () => {
+  wallet.cache.close();
+  wallet = openWallet(pressure.checked);
+  watch(wallet.cache);
+  inspector.attach(wallet.cache);
+  void load(true);
 });
 watch(wallet.cache);
 inspector.attach(wallet.cache);
