@@ -984,10 +984,317 @@ describe('close', () => {
   });
 });
 
-describe('not yet implemented', () => {
-  it('rejects getOrSet until #25', async () => {
+/** A promise with its resolve and reject functions. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+describe('getOrSet', () => {
+  it('loads a miss once, stores it with reason load and serves it from the cache after', async () => {
+    const cache = threeTiers();
+    const events = record(cache, ['set']);
+    const ns = cache.namespace('n', { tiers: ['memory', 'session', 'indexeddb'], ttlMs: 1_000 });
+    const loader = vi.fn(() => Promise.resolve('v'));
+
+    await expect(ns.getOrSet('k', loader)).resolves.toBe('v');
+    await settle();
+    await expect(ns.getOrSet('k', loader)).resolves.toBe('v');
+
+    expect(loader).toHaveBeenCalledTimes(1);
+    expect(events.map((event) => [event.tier, event.type === 'set' && event.reason])).toEqual([
+      ['memory', 'load'],
+      ['session', 'load'],
+      ['indexeddb', 'load'],
+    ]);
+    await expect(cache.namespace('n', { tiers: ['indexeddb'] }).get('k')).resolves.toBe('v');
+  });
+
+  it('accepts a synchronous loader and applies the set options', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(0);
+    const cache = threeTiers();
+    const events = record(cache, ['set']);
+    const ns = cache.namespace('n', { tiers: ['memory'], ttlMs: 1_000 });
+
+    await expect(
+      ns.getOrSet('k', () => 'v', { ttlMs: 50, staleWhileRevalidateMs: 10 }),
+    ).resolves.toBe('v');
+
+    expect(events).toEqual([
+      expect.objectContaining({ key: 'k', reason: 'load', freshUntil: 50, expiresAt: 60 }),
+    ]);
+  });
+
+  it('resolves once the sync tiers hold the value, without waiting for IndexedDB', async () => {
+    const write = deferred<undefined>();
+    const slow: TierAdapter<false> = {
+      name: 'indexeddb',
+      sync: false,
+      status: 'available',
+      get: () => Promise.resolve(undefined),
+      set: () => write.promise,
+      delete: () => Promise.resolve(),
+      clear: () => Promise.resolve(),
+      keys: () => Promise.resolve([]),
+      close: () => undefined,
+    };
+    const cache = createCache({
+      name: 'app',
+      tiers: [memoryTier(), tierConfig('indexeddb', () => slow)],
+      sweepIntervalMs: 0,
+    });
+    const events = record(cache, ['set']);
+    const ns = cache.namespace('n', { tiers: ['memory', 'indexeddb'] });
+
+    await expect(ns.getOrSet('k', () => 'v')).resolves.toBe('v');
+    expect(ns.getSync('k')).toBe('v');
+    expect(events.map((event) => event.tier)).toEqual(['memory']);
+
+    write.resolve(undefined);
+    await settle();
+    expect(events.map((event) => event.tier)).toEqual(['memory', 'indexeddb']);
+  });
+
+  it('joins concurrent calls for a key into one load', async () => {
+    const ns = threeTiers().namespace('n', { tiers: ['memory', 'indexeddb'] });
+    const load = deferred<string>();
+    const loader = vi.fn(() => load.promise);
+
+    const first = ns.getOrSet('k', loader);
+    const second = ns.getOrSet('k', loader);
+    const other = ns.getOrSet('other', () => 'o');
+    await settle();
+    load.resolve('v');
+
+    await expect(Promise.all([first, second, other])).resolves.toEqual(['v', 'v', 'o']);
+    expect(loader).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects every joined caller with the loader error and caches nothing', async () => {
+    const cache = threeTiers();
+    const events = record(cache, ['set', 'error']);
+    const ns = cache.namespace('n', { tiers: ['memory', 'indexeddb'] });
+    const failure = new Error('offline');
+    const load = deferred<string>();
+
+    const first = ns.getOrSet('k', () => load.promise);
+    const second = ns.getOrSet('k', () => 'unused');
+    await settle();
+    load.reject(failure);
+
+    await expect(first).rejects.toBe(failure);
+    await expect(second).rejects.toBe(failure);
+    expect(events).toEqual([]);
+    await expect(ns.getOrSet('k', () => 'v')).resolves.toBe('v');
+  });
+
+  it('rejects a loader that throws, or that resolves undefined or a value the policy cannot store', async () => {
+    const ns = threeTiers().namespace('n', { tiers: ['memory', 'session'] });
+    const failure = new Error('boom');
+
+    await expect(
+      ns.getOrSet('k', () => {
+        throw failure;
+      }),
+    ).rejects.toBe(failure);
+    await expect(ns.getOrSet('k', () => undefined as never)).rejects.toThrow(TypeError);
+    await expect(ns.getOrSet('k', () => () => 1)).rejects.toThrow(TypeError);
+    await expect(ns.getOrSet('k', () => ({ big: 1n }))).rejects.toThrow(TypeError);
+    await expect(ns.has('k')).resolves.toBe(false);
+  });
+
+  it('rejects invalid arguments without calling the loader', async () => {
     const ns = threeTiers().namespace('n', { tiers: ['memory'] });
-    await expect(ns.getOrSet('k', () => Promise.resolve('v'))).rejects.toThrow('#25');
+    const loader = vi.fn(() => 'v');
+
+    await expect(ns.getOrSet(1 as never, loader)).rejects.toThrow(TypeError);
+    await expect(ns.getOrSet('k', 'v' as never)).rejects.toThrow(TypeError);
+    await expect(ns.getOrSet('k', loader, { ttlMs: 0 })).rejects.toThrow(TypeError);
+    expect(loader).not.toHaveBeenCalled();
+  });
+
+  it('only emits storage failures of a load', async () => {
+    const broken = scriptedTier('memory', { get: () => undefined, delete: () => undefined });
+    const cache = createCache({ name: 'app', tiers: [broken.config] });
+    const errors: CacheError[] = [];
+    cache.on('error', (event) => errors.push(event.error));
+
+    await expect(
+      cache.namespace('n', { tiers: ['memory'] }).getOrSet('k', () => 'v'),
+    ).resolves.toBe('v');
+    expect(errors.map((error) => error.code)).toEqual(['STORAGE_FAILED']);
+  });
+
+  it('returns but does not store a load overtaken by a set', async () => {
+    const cache = threeTiers();
+    const ns = cache.namespace('n', { tiers: ['memory', 'indexeddb'] });
+    const load = deferred<string>();
+
+    const pending = ns.getOrSet('k', () => load.promise);
+    await settle();
+    await ns.set('k', 'newer');
+    load.resolve('loaded');
+
+    await expect(pending).resolves.toBe('loaded');
+    await expect(ns.get('k')).resolves.toBe('newer');
+  });
+
+  it.each([
+    ['a delete of its key', (_: TieredCache, ns: CacheNamespace<string>) => ns.delete('k')],
+    ['a clear of its namespace', (_: TieredCache, ns: CacheNamespace<string>) => ns.clear()],
+    ['a clear of the cache', (cache: TieredCache) => cache.clear()],
+  ])('starts a new load after %s instead of joining the old one', async (_, overtake) => {
+    const cache = threeTiers();
+    const ns = cache.namespace<string>('n', { tiers: ['memory', 'indexeddb'] });
+    const old = deferred<string>();
+
+    const oldLoader = vi.fn(() => old.promise);
+    const newLoader = vi.fn(() => 'new');
+
+    const first = ns.getOrSet('k', oldLoader);
+    await vi.waitFor(() => {
+      expect(oldLoader).toHaveBeenCalled();
+    });
+    await overtake(cache, ns);
+    const second = ns.getOrSet('k', newLoader);
+    await vi.waitFor(() => {
+      expect(newLoader).toHaveBeenCalled();
+    });
+    old.resolve('old');
+
+    await expect(first).resolves.toBe('old');
+    await expect(second).resolves.toBe('new');
+    await settle();
+    await expect(ns.get('k')).resolves.toBe('new');
+  });
+
+  it('returns but does not store a load overtaken by close', async () => {
+    const cache = threeTiers();
+    const events = record(cache, ['set']);
+    const load = deferred<string>();
+
+    const pending = cache.namespace('n', { tiers: ['memory'] }).getOrSet('k', () => load.promise);
+    await settle();
+    cache.close();
+    load.resolve('v');
+
+    await expect(pending).resolves.toBe('v');
+    expect(events).toEqual([]);
+  });
+
+  it('rejects with CLOSED after close', async () => {
+    const cache = threeTiers();
+    const ns = cache.namespace('n', { tiers: ['memory'] });
+    cache.close();
+    await expect(ns.getOrSet('k', () => 'v')).rejects.toMatchObject({ code: 'CLOSED' });
+  });
+
+  describe('with a stale entry', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(0);
+    });
+
+    async function staleNamespace() {
+      const cache = threeTiers();
+      const ns = cache.namespace('n', {
+        tiers: ['memory', 'indexeddb'],
+        ttlMs: 1_000,
+        staleWhileRevalidateMs: 1_000,
+      });
+      await ns.set('k', 'old');
+      vi.setSystemTime(1_500);
+      return { cache, ns };
+    }
+
+    it('serves it and refreshes it once in the background', async () => {
+      const { cache, ns } = await staleNamespace();
+      const events = record(cache, ['miss', 'set']);
+      const load = deferred<string>();
+      const loader = vi.fn(() => load.promise);
+
+      await expect(ns.getOrSet('k', loader)).resolves.toBe('old');
+      await expect(ns.getOrSet('k', loader)).resolves.toBe('old');
+      expect(loader).toHaveBeenCalledTimes(1);
+      expect(events.filter((event) => event.type === 'miss')).toEqual(
+        expect.arrayContaining([
+          { type: 'miss', namespace: 'n', key: 'k', tier: 'memory', reason: 'stale' },
+        ]),
+      );
+
+      load.resolve('new');
+      await settle();
+      expect(events.filter((event) => event.type === 'set')).toEqual([
+        expect.objectContaining({ tier: 'memory', reason: 'load', freshUntil: 2_500 }),
+        expect.objectContaining({ tier: 'indexeddb', reason: 'load', freshUntil: 2_500 }),
+      ]);
+      await expect(ns.get('k')).resolves.toBe('new');
+    });
+
+    it('prefers a fresh copy in a lower tier to the first stale one', async () => {
+      const cache = threeTiers();
+      await cache
+        .namespace('n', { tiers: ['memory'], ttlMs: 1_000, staleWhileRevalidateMs: 1_000 })
+        .set('k', 'stale');
+      await cache.namespace('n', { tiers: ['indexeddb'] }).set('k', 'fresh');
+      vi.setSystemTime(1_500);
+      const loader = vi.fn(() => 'loaded');
+
+      const ns = cache.namespace('n', { tiers: ['memory', 'indexeddb'] });
+      await expect(ns.getOrSet('k', loader)).resolves.toBe('fresh');
+      expect(loader).not.toHaveBeenCalled();
+    });
+
+    it('lets a miss join the background load', async () => {
+      const { ns } = await staleNamespace();
+      const load = deferred<string>();
+      await expect(ns.getOrSet('k', () => load.promise)).resolves.toBe('old');
+      vi.setSystemTime(2_000);
+
+      const joined = ns.getOrSet('k', () => 'unused');
+      await settle();
+      load.resolve('new');
+      await expect(joined).resolves.toBe('new');
+    });
+
+    it.each([
+      ['rejects', () => Promise.reject(new Error('offline'))],
+      ['resolves undefined', () => Promise.resolve(undefined as never)],
+    ])('reports LOADER_FAILED and keeps it when the loader %s', async (_, loader) => {
+      const { cache, ns } = await staleNamespace();
+      const errors: CacheError[] = [];
+      cache.on('error', (event) => errors.push(event.error));
+
+      await expect(ns.getOrSet('k', loader)).resolves.toBe('old');
+      await settle();
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatchObject({ code: 'LOADER_FAILED', namespace: 'n', key: 'k' });
+      expect(errors[0]?.cause).toBeInstanceOf(Error);
+      await expect(ns.getOrSet('k', () => 'new')).resolves.toBe('old');
+    });
+  });
+
+  describe('outside a browser context', () => {
+    it('calls the loader every time and stores nothing', async () => {
+      vi.unstubAllGlobals();
+      const ns = createCache({ name: 'app', tiers: [memoryTier()] }).namespace('n', {
+        tiers: ['memory'],
+      });
+      const loader = vi.fn(() => Promise.resolve('v'));
+
+      await expect(
+        Promise.all([ns.getOrSet('k', loader), ns.getOrSet('k', loader)]),
+      ).resolves.toEqual(['v', 'v']);
+      expect(loader).toHaveBeenCalledTimes(2);
+      await expect(ns.getOrSet('k', () => undefined as never)).rejects.toThrow(TypeError);
+    });
   });
 });
 

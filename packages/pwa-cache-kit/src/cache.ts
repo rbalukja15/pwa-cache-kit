@@ -35,6 +35,14 @@ interface Tier {
 /** Whether a read of a key may still promote: the key, namespace and cache were not written. */
 type Detach = () => boolean;
 
+/** Where a `getOrSet` read keeps the first stale entry it walks past (section 3). */
+interface StaleSlot {
+  envelope?: Envelope;
+}
+
+type Defaults = Required<SetOptions> & { readonly version: number };
+type SetReason = Extract<CacheEvent, { type: 'set' }>['reason'];
+
 /** Creates a cache over the given tiers (ADR-0002 section 1). */
 export const createCache: CreateCache = (options) => {
   // `broadcast` is checked but unused until cross-context invalidation lands (#24).
@@ -65,6 +73,8 @@ export const createCache: CreateCache = (options) => {
   const queues = new Map<string, Promise<void>>();
   const barriers = new Map<string, Promise<void>>();
   let cacheBarrier: Promise<void> = Promise.resolve();
+  /** `getOrSet` loads in flight, by queue id, so concurrent calls for a key join one load. */
+  const loads = new Map<string, Promise<CacheValue>>();
 
   // --- events -------------------------------------------------------------------------------
 
@@ -161,8 +171,22 @@ export const createCache: CreateCache = (options) => {
     keyVersions.set(id, (keyVersions.get(id) ?? 0) + 1);
   }
 
+  // A load overtaken by a set, delete or clear still settles for the callers that joined it, but
+  // later calls start their own instead of joining a load whose result will not be stored.
+
+  function forgetLoad(ns: string, key: string): void {
+    loads.delete(queueId(ns, key));
+  }
+
   function detachNamespace(ns: string): void {
     namespaceEpochs.set(ns, (namespaceEpochs.get(ns) ?? 0) + 1);
+    const prefix = ns + SEPARATOR;
+    for (const id of loads.keys()) if (id.startsWith(prefix)) loads.delete(id);
+  }
+
+  function detachCache(): void {
+    cacheEpoch++;
+    loads.clear();
   }
 
   // --- tiers ---------------------------------------------------------------------------------
@@ -200,6 +224,7 @@ export const createCache: CreateCache = (options) => {
     key: string,
     version: number,
     outcome: { readonly result: Envelope | 'newer' | undefined } | { readonly error: unknown },
+    stale?: StaleSlot,
   ): Envelope | 'expired' | undefined {
     if ('error' in outcome) {
       const error = failure(outcome.error, tier, ns, key);
@@ -228,6 +253,7 @@ export const createCache: CreateCache = (options) => {
       return undefined;
     }
     if (result.freshUntil !== undefined && now >= result.freshUntil) {
+      if (stale && stale.envelope === undefined) stale.envelope = result;
       miss(tier, ns, key, 'stale');
       return undefined;
     }
@@ -241,14 +267,20 @@ export const createCache: CreateCache = (options) => {
     miss(tier, ns, key, 'expired');
   }
 
-  function readSync(tier: Tier, ns: string, key: string, version: number): Envelope | undefined {
+  function readSync(
+    tier: Tier,
+    ns: string,
+    key: string,
+    version: number,
+    stale?: StaleSlot,
+  ): Envelope | undefined {
     let outcome;
     try {
       outcome = { result: (tier.adapter as TierAdapter<true>).get(ns, key) };
     } catch (error) {
       outcome = { error };
     }
-    const assessed = assess(tier.name, ns, key, version, outcome);
+    const assessed = assess(tier.name, ns, key, version, outcome, stale);
     if (assessed !== 'expired') return assessed;
     let removal: unknown;
     try {
@@ -265,6 +297,7 @@ export const createCache: CreateCache = (options) => {
     ns: string,
     key: string,
     version: number,
+    stale?: StaleSlot,
   ): Promise<Envelope | undefined> {
     let outcome;
     try {
@@ -272,7 +305,7 @@ export const createCache: CreateCache = (options) => {
     } catch (error) {
       outcome = { error };
     }
-    const assessed = assess(tier.name, ns, key, version, outcome);
+    const assessed = assess(tier.name, ns, key, version, outcome, stale);
     if (assessed !== 'expired') return assessed;
     let removal: unknown;
     try {
@@ -329,13 +362,19 @@ export const createCache: CreateCache = (options) => {
     return undefined;
   }
 
-  async function get(ns: string, version: number, policy: readonly TierName[], key: string) {
+  async function get(
+    ns: string,
+    version: number,
+    policy: readonly TierName[],
+    key: string,
+    stale?: StaleSlot,
+  ) {
     const isAttached = detachable(ns, key);
     const walked: Tier[] = [];
     for (const tier of available(policy)) {
       const envelope = tier.adapter.sync
-        ? readSync(tier, ns, key, version)
-        : await enqueue(ns, key, () => readAsync(tier, ns, key, version));
+        ? readSync(tier, ns, key, version, stale)
+        : await enqueue(ns, key, () => readAsync(tier, ns, key, version, stale));
       if (envelope !== undefined) {
         // A detached read returns its value but promotes nothing (section 15).
         hit(tier, isAttached() ? walked : [], ns, key, envelope);
@@ -348,15 +387,19 @@ export const createCache: CreateCache = (options) => {
 
   // --- write path (section 4) ----------------------------------------------------------------
 
-  async function set(
-    ns: string,
-    defaults: Required<SetOptions> & { readonly version: number },
+  /**
+   * Validates a value and its options and builds its envelope (sections 4 to 6 and 8).
+   * @throws {TypeError} for invalid options or a value the policy cannot store.
+   */
+  function prepare(
+    caller: string,
+    defaults: Defaults,
     policy: readonly TierName[],
-    key: string,
-    value: CacheValue,
+    value: unknown,
     options: SetOptions | undefined,
-  ): Promise<SetResult> {
-    const { ttlMs, staleWhileRevalidateMs } = checkSetOptions(options, defaults);
+  ): Envelope {
+    checkValue(caller, value);
+    const { ttlMs, staleWhileRevalidateMs } = checkSetOptions(options, defaults, caller);
     let sizeBytes: number;
     if (policy.includes('session')) {
       // Typed unknown: JSON.stringify returns undefined for a function or symbol.
@@ -364,10 +407,12 @@ export const createCache: CreateCache = (options) => {
       try {
         json = JSON.stringify(value);
       } catch (cause) {
-        throw new TypeError('set: a value in a session namespace must be JSON-safe', { cause });
+        throw new TypeError(`${caller}: a value in a session namespace must be JSON-safe`, {
+          cause,
+        });
       }
       if (typeof json !== 'string') {
-        throw new TypeError('set: a value in a session namespace must be JSON-safe');
+        throw new TypeError(`${caller}: a value in a session namespace must be JSON-safe`);
       }
       sizeBytes = 2 * json.length;
     } else {
@@ -376,7 +421,7 @@ export const createCache: CreateCache = (options) => {
     const now = Date.now();
     const freshUntil = now + ttlMs;
     const expiresAt = freshUntil + staleWhileRevalidateMs;
-    const envelope: Envelope = {
+    return {
       format: 1,
       value,
       schemaVersion: defaults.version,
@@ -385,17 +430,44 @@ export const createCache: CreateCache = (options) => {
       ...(Number.isFinite(freshUntil) ? { freshUntil } : {}),
       ...(Number.isFinite(expiresAt) ? { expiresAt } : {}),
     };
-    if (inert) return { stored: [], errors: [] };
+  }
 
+  /**
+   * Writes an envelope through to every available policy tier: sync tiers during the call, async
+   * ones queued on the key (section 4). Detaches the reads and loads in flight for the key.
+   */
+  function store(
+    ns: string,
+    policy: readonly TierName[],
+    key: string,
+    envelope: Envelope,
+    reason: SetReason,
+  ): (TierName | CacheError | Promise<TierName | CacheError>)[] {
     detachKey(ns, key);
     const outcomes: (TierName | CacheError | Promise<TierName | CacheError>)[] = [];
     for (const tier of available(policy)) {
       outcomes.push(
         tier.adapter.sync
-          ? writeSync(tier, ns, key, envelope)
-          : enqueue(ns, key, () => writeAsync(tier, ns, key, envelope)),
+          ? writeSync(tier, ns, key, envelope, reason)
+          : enqueue(ns, key, () => writeAsync(tier, ns, key, envelope, reason)),
       );
     }
+    return outcomes;
+  }
+
+  async function set(
+    ns: string,
+    defaults: Defaults,
+    policy: readonly TierName[],
+    key: string,
+    value: CacheValue,
+    options: SetOptions | undefined,
+  ): Promise<SetResult> {
+    const envelope = prepare('set', defaults, policy, value, options);
+    if (inert) return { stored: [], errors: [] };
+
+    forgetLoad(ns, key);
+    const outcomes = store(ns, policy, key, envelope, 'set');
     const stored: TierName[] = [];
     const errors: CacheError[] = [];
     for (const outcome of outcomes) {
@@ -413,7 +485,13 @@ export const createCache: CreateCache = (options) => {
     return { stored, errors };
   }
 
-  function written(tier: Tier, ns: string, key: string, envelope: Envelope): TierName {
+  function written(
+    tier: Tier,
+    ns: string,
+    key: string,
+    envelope: Envelope,
+    reason: SetReason,
+  ): TierName {
     if (emitter.has('set')) {
       const { sizeBytes } = envelope;
       send({
@@ -422,14 +500,14 @@ export const createCache: CreateCache = (options) => {
         key,
         tier: tier.name,
         sizeBytes,
-        reason: 'set',
+        reason,
         ...expiry(envelope),
       });
     }
     return tier.name;
   }
 
-  function writeSync(tier: Tier, ns: string, key: string, envelope: Envelope) {
+  function writeSync(tier: Tier, ns: string, key: string, envelope: Envelope, reason: SetReason) {
     const adapter = tier.adapter as TierAdapter<true>;
     try {
       adapter.set(ns, key, envelope);
@@ -444,10 +522,16 @@ export const createCache: CreateCache = (options) => {
       emitError(cause);
       return cause;
     }
-    return written(tier, ns, key, envelope);
+    return written(tier, ns, key, envelope, reason);
   }
 
-  async function writeAsync(tier: Tier, ns: string, key: string, envelope: Envelope) {
+  async function writeAsync(
+    tier: Tier,
+    ns: string,
+    key: string,
+    envelope: Envelope,
+    reason: SetReason,
+  ) {
     try {
       await tier.adapter.set(ns, key, envelope);
     } catch (error) {
@@ -456,7 +540,81 @@ export const createCache: CreateCache = (options) => {
       emitError(cause);
       return cause;
     }
-    return written(tier, ns, key, envelope);
+    return written(tier, ns, key, envelope, reason);
+  }
+
+  // --- getOrSet (section 9) -----------------------------------------------------------------
+
+  /**
+   * Calls the loader once per key on this instance and stores its result as `set` does. Callers
+   * get the value once the sync tiers hold it; IndexedDB and storage failures are only emitted. A
+   * load that a write, clear or close overtook is returned but not stored (section 15).
+   */
+  function load(
+    ns: string,
+    defaults: Defaults,
+    policy: readonly TierName[],
+    key: string,
+    loader: () => CacheValue | Promise<CacheValue>,
+    options: SetOptions | undefined,
+  ): Promise<CacheValue> {
+    const id = queueId(ns, key);
+    const inFlight = loads.get(id);
+    if (inFlight) return inFlight;
+    const isAttached = detachable(ns, key);
+    const run = (async () => {
+      const value: unknown = await loader();
+      const envelope = prepare('getOrSet', defaults, policy, value, options);
+      if (isAttached()) {
+        const pending = store(ns, policy, key, envelope, 'load').filter(isPromise);
+        void Promise.all(pending).then(watchStatus);
+      }
+      return envelope.value;
+    })();
+    loads.set(id, run);
+    const done = () => {
+      if (loads.get(id) === run) loads.delete(id);
+    };
+    void run.then(done, done);
+    return run;
+  }
+
+  /** Reloads a stale key in the background, unless a load for it is already in flight. */
+  function revalidate(...args: Parameters<typeof load>): void {
+    const [ns, , , key] = args;
+    if (loads.has(queueId(ns, key))) return;
+    load(...args).catch((cause: unknown) => {
+      emitError(
+        new CacheError('LOADER_FAILED', `getOrSet: background load failed for "${key}"`, {
+          cause,
+          namespace: ns,
+          key,
+        }),
+      );
+    });
+  }
+
+  async function getOrSet(
+    ns: string,
+    defaults: Defaults,
+    policy: readonly TierName[],
+    key: string,
+    loader: () => CacheValue | Promise<CacheValue>,
+    options: SetOptions | undefined,
+  ): Promise<CacheValue> {
+    if (inert) {
+      // No deduplication, so server requests never share data (section 13).
+      return prepare('getOrSet', defaults, policy, await loader(), options).value;
+    }
+    const stale: StaleSlot = {};
+    const value = await get(ns, defaults.version, policy, key, stale);
+    watchStatus();
+    if (value !== undefined) return value;
+    if (stale.envelope !== undefined) {
+      revalidate(ns, defaults, policy, key, loader, options);
+      return stale.envelope.value;
+    }
+    return load(ns, defaults, policy, key, loader, options);
   }
 
   /** Runs one removal per tier: sync ones now, async ones queued; collects the failures. */
@@ -508,6 +666,7 @@ export const createCache: CreateCache = (options) => {
   function remove(ns: string, policy: readonly TierName[], key: string): Promise<void> {
     if (inert) return Promise.resolve();
     detachKey(ns, key);
+    forgetLoad(ns, key);
     return removeEverywhere(
       available(policy),
       (tier) => tier.adapter.delete(ns, key),
@@ -523,7 +682,7 @@ export const createCache: CreateCache = (options) => {
 
   function clear(ns?: string): Promise<void> {
     if (inert) return Promise.resolve();
-    if (ns === undefined) cacheEpoch++;
+    if (ns === undefined) detachCache();
     else detachNamespace(ns);
     return removeEverywhere(
       available(configured),
@@ -613,7 +772,7 @@ export const createCache: CreateCache = (options) => {
       set: (key, value, options) =>
         attempt(() => {
           checkKey('set', key);
-          checkValue(value);
+          checkValue('set', value);
           checkOpen();
           return set(nsName, defaults, policy, key, value, options);
         }),
@@ -633,7 +792,16 @@ export const createCache: CreateCache = (options) => {
           checkOpen();
           return clear(nsName);
         }),
-      getOrSet: () => Promise.reject(new Error('getOrSet is not implemented yet (#25)')),
+      getOrSet: (key, loader, options) =>
+        attempt(async () => {
+          checkKey('getOrSet', key);
+          if (typeof loader !== 'function') {
+            throw new TypeError('getOrSet: loader must be a function');
+          }
+          checkSetOptions(options, defaults, 'getOrSet');
+          checkOpen();
+          return (await getOrSet(nsName, defaults, policy, key, loader, options)) as V;
+        }),
     };
   }
 
@@ -751,8 +919,8 @@ function checkNamespaceOptions(name: unknown, options: unknown, configured: read
 }
 
 /** JavaScript callers can pass undefined, which no tier can store. */
-function checkValue(value: unknown): void {
-  if (value === undefined) throw new TypeError('set: value must not be undefined');
+function checkValue(caller: string, value: unknown): asserts value is CacheValue {
+  if (value === undefined) throw new TypeError(`${caller}: value must not be undefined`);
 }
 
 function checkSetOptions(
@@ -813,6 +981,10 @@ function defined<T extends object>(object: T): { [K in keyof T]?: Exclude<T[K], 
   return Object.fromEntries(Object.entries(object).filter(([, value]) => value !== undefined)) as {
     [K in keyof T]?: Exclude<T[K], undefined>;
   };
+}
+
+function isPromise<T>(value: T | Promise<T>): value is Promise<T> {
+  return value instanceof Promise;
 }
 
 function ignore(): void {
