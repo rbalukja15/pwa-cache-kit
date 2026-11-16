@@ -123,9 +123,10 @@ describe('session adapter', () => {
   });
 
   it('reads entries written before it was created, as after a reload', () => {
-    sessionAdapter()('app', emit).set('ns', 'k', entry('v'));
+    const written = entry('v');
+    sessionAdapter()('app', emit).set('ns', 'k', written);
 
-    expect(sessionAdapter()('app', emit).get('ns', 'k')).toEqual(entry('v'));
+    expect(sessionAdapter()('app', emit).get('ns', 'k')).toEqual(written);
   });
 
   it('counts entries already in storage towards its budget', () => {
