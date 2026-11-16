@@ -12,4 +12,4 @@ Closes #<n>
 
 - [ ] Tests added or updated
 - [ ] Docs updated (README, ADRs, TSDoc) where relevant
-- [ ] Changeset added if the change is user-facing (once releases exist)
+- [ ] Changeset added if the change is user-facing (`npx changeset`)

@@ -33,6 +33,7 @@ packages/pwa-cache-kit/   the library (npm workspace, published as @rbalukja/pwa
   e2e/                    Playwright smoke tests of the built library in real browsers (#11)
   tsup.config.ts          build config: ESM + .d.ts into dist/
 docs/adr/                 architecture decision records, NNNN-short-title.md
+.changeset/               pending changesets and the changesets config (#19)
 demo/                     demo app workspace (planned, #15)
 ```
 
@@ -55,6 +56,8 @@ npm run test:e2e       # build, then Playwright smoke tests in Chromium, Firefox
 npm run lint           # eslint . (type-aware: strictTypeChecked + stylisticTypeChecked)
 npm run typecheck      # tsc -p tsconfig.json (noEmit; src, test and config files)
 npm run format:check   # prettier --check .
+npx changeset          # add a changeset for a user-facing change
+npm run version-packages  # apply pending changesets: bump version, write CHANGELOG.md
 ```
 
 `test:e2e` needs Playwright's browsers (`npx playwright install chromium firefox webkit`). Where
@@ -120,9 +123,11 @@ staged files. To format by hand, run `npx prettier --write <paths>` on the files
 - Semver, pre-1.0: breaking changes bump the minor version (`0.x` to `0.(x+1)`). Non-breaking
   features and fixes bump the patch, since `^0.x.y` ranges with x >= 1 only accept patch updates.
   The first public release is 0.1.0, because `^0.0.y` accepts no updates at all.
-- Changesets (#19) drive versions and the changelog. Once they land, every user-facing library
-  change includes a changeset (`npx changeset`) with that bump, and `version` is never edited by
-  hand. Before 1.0, never pick `major` in a changeset: it would publish 1.0.0.
+- Changesets drive versions and the changelog. Every user-facing library change includes a
+  changeset (`npx changeset`) with that bump; docs, tests, CI and tooling changes need none.
+  `npm run version-packages` turns pending changesets into the new `version` and
+  `packages/pwa-cache-kit/CHANGELOG.md`, so neither is ever edited by hand. Before 1.0, never pick
+  `major` in a changeset: it would publish 1.0.0.
 - No AI attribution in commits, PRs, issues or code: no `Co-Authored-By` trailers, no "Generated
   with" footers, no AI session links.
 
