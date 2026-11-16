@@ -10,7 +10,13 @@ import { fileURLToPath } from 'node:url';
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = resolve(packageDir, '../..');
 const tsc = join(repoRoot, 'node_modules/typescript/bin/tsc');
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+// `npm run` sets npm_execpath to npm's own CLI script. Running it with node avoids spawning the
+// npm.cmd shim, which execFileSync refuses on Windows without a shell.
+const npmCli = process.env['npm_execpath'] ?? '';
+if (npmCli === '') {
+  console.error('pack smoke test: run it through npm (npm run test:pack)');
+  process.exit(1);
+}
 
 const required = [
   'LICENSE',
@@ -22,6 +28,10 @@ const required = [
   'dist/inspector.d.ts',
 ];
 const forbidden = /^(src|test|e2e|scripts)\//;
+
+function npm(args: string[], cwd: string): string {
+  return run(process.execPath, [npmCli, ...args], cwd);
+}
 
 function run(command: string, args: string[], cwd: string): string {
   return execFileSync(command, args, {
@@ -44,7 +54,7 @@ interface PackResult {
 const work = mkdtempSync(join(tmpdir(), 'pwa-cache-kit-pack-'));
 try {
   const [pack] = JSON.parse(
-    run(npm, ['pack', '--json', '--pack-destination', work], packageDir),
+    npm(['pack', '--json', '--pack-destination', work], packageDir),
   ) as PackResult[];
   if (pack === undefined) fail('npm pack returned no tarball');
 
@@ -60,8 +70,7 @@ try {
     join(consumer, 'package.json'),
     JSON.stringify({ name: 'consumer', private: true, type: 'module' }),
   );
-  run(
-    npm,
+  npm(
     ['install', '--no-audit', '--no-fund', '--ignore-scripts', join(work, pack.filename)],
     consumer,
   );

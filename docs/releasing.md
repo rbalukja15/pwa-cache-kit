@@ -6,12 +6,29 @@ Versions and the changelog come from changesets (see CLAUDE.md). Publishing is d
 ## One-time setup
 
 1. Create an npm access token that can publish `@rbalukja/pwa-cache-kit`: on npmjs.com, Access
-   Tokens, Generate New Token, a granular token with read and write access to the package (or to
-   the `@rbalukja` scope before the first publish).
+   Tokens, Generate New Token, a granular token with read and write access to the `@rbalukja`
+   scope (the package does not exist yet before the first publish). Give it a short expiry: it is
+   only needed for the first release.
 2. Add it to the repository as the Actions secret `NPM_TOKEN` (Settings, Secrets and variables,
    Actions).
+3. Optional but recommended: in Settings, Environments, open `npm` (created by the first run, or
+   create it by hand) and add yourself as a required reviewer, so that every publish waits for
+   your approval in the Actions tab.
 
-Provenance needs no setup: the workflow has `id-token: write`, and the repository is public.
+Provenance needs no setup: the workflow has `id-token: write`, the repository is public, and the
+package's `publishConfig` turns it on.
+
+## After the first release: trusted publishing
+
+npm can authenticate the workflow by its GitHub identity instead of a stored token, which leaves no
+long-lived secret to leak. It can only be set up once the package exists on npm:
+
+1. On npmjs.com, open the package's Settings, Trusted Publisher, choose GitHub Actions and enter
+   owner `rbalukja15`, repository `pwa-cache-kit`, workflow `release.yml` and environment `npm`.
+2. Delete the `NPM_TOKEN` secret from the repository and revoke the token on npmjs.com.
+
+The workflow needs no change: npm uses the trusted publisher when one is configured, and the
+`NODE_AUTH_TOKEN` line then has nothing to pass.
 
 ## Cutting a release
 
@@ -25,7 +42,10 @@ Provenance needs no setup: the workflow has `id-token: write`, and the repositor
    and removes the applied changesets. Review the result.
 
 2. Merge that change into `main` through a pull request (`chore(release): 0.1.0`).
-3. Tag the merge commit with the new version and push the tag:
+3. Optional dry run: in Actions, Release, Run workflow on `main`. It runs every step, including
+   the version and main-branch check, and ends with `npm publish --dry-run`, which lists what would
+   be uploaded and publishes nothing.
+4. Tag the merge commit with the new version and push the tag:
 
    ```sh
    git checkout main && git pull
