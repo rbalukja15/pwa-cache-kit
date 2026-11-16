@@ -2,6 +2,12 @@
   "name": "@rbalukja/pwa-cache-kit",
   "version": "0.0.0",
   "description": "Offline-first three-tier cache (memory, SessionStorage, IndexedDB) for PWAs.",
+  "license": "MIT",
+  "author": "Romarjo Balukja",
+  "homepage": "https://github.com/rbalukja15/pwa-cache-kit#readme",
+  "bugs": {
+    "url": "https://github.com/rbalukja15/pwa-cache-kit/issues"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -19,6 +25,9 @@
     "dist"
   ],
   "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/rbalukja15/pwa-cache-kit.git",
@@ -35,5 +44,9 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

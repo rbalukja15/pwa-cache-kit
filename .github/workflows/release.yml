@@ -1,0 +1,95 @@
+name: Release
+
+# Publishes @rbalukja/pwa-cache-kit to npm when a version tag (v0.1.0, v0.1.1, ...) is pushed.
+# Run it by hand (Actions, Release, Run workflow) for a dry run: every step runs, the tag check
+# runs against the would-be tag, and npm publish only reports what it would upload.
+# docs/releasing.md has the steps that lead up to the tag.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Add required reviewers to this environment (Settings, Environments, npm) so that a tag push
+    # alone cannot publish.
+    environment: npm
+    permissions:
+      contents: read
+      # Lets npm authenticate as this workflow (trusted publishing) and sign the provenance
+      # statement with its OIDC identity.
+      id-token: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          # The main-branch check below needs the full history.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Check the tag
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="v$(node -p "require('./packages/pwa-cache-kit/package.json').version")"
+          # A dry run has no tag: check the commit it runs on as if it were tagged with $version.
+          if [ "$EVENT" = workflow_dispatch ]; then TAG="$version"; fi
+          if [ "$TAG" != "$version" ]; then
+            echo "::error::Tag $TAG does not match the package version $version. Run npm run version-packages and tag that commit."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$TAG points at a commit that is not on main."
+            exit 1
+          fi
+          echo "Releasing $version from $GITHUB_SHA"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test with coverage
+        run: npm run test:coverage
+
+      - name: Smoke-test the packed tarball
+        run: npm run test:pack
+
+      # Trusted publishing needs npm 11.5.1 or newer, which the npm bundled with Node may not be.
+      - name: Update npm
+        run: npm install --global npm@^11.5.1
+
+      # publishConfig in the package's package.json sets public access and provenance. Until
+      # trusted publishing is set up on npmjs.com, npm authenticates with the NPM_TOKEN secret.
+      - name: Publish
+        run: npm publish -w @rbalukja/pwa-cache-kit ${{ github.event_name == 'workflow_dispatch' && '--dry-run' || '' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "npm run build && playwright test",
+    "test:pack": "npm run build -w @rbalukja/pwa-cache-kit && node packages/pwa-cache-kit/scripts/pack-smoke.ts",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json",
     "format": "prettier --write .",
