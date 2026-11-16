@@ -127,9 +127,30 @@ events cost nothing.
 ## Demo
 
 [`demo/`](./demo) is an offline ticket wallet built on the library. It loads its tickets with
-`getOrSet`, keeps them in all three tiers and opens offline after one visit. Run it with
+`getOrSet`, keeps them in all three tiers, opens offline after one visit and shows the cache
+inspector. Run it with
 `npm run build && npm run preview -w pwa-cache-kit-demo`, or `npm run dev:demo` without the service
 worker. See [demo/README.md](./demo/README.md).
+
+## Cache inspector
+
+`@rbalukja/pwa-cache-kit/inspector` is an in-page panel for development. It shows each event as it
+happens (which tier served a read, misses, promotions, writes, evictions and errors), and a table
+of the keys it has seen with the tiers holding them, their time to live and size. Evicted copies
+stay highlighted for a few seconds. It is a separate entry point, so the core bundle does not
+include it, and it reads the cache only through its events.
+
+```ts
+import { createInspector } from '@rbalukja/pwa-cache-kit/inspector';
+
+if (import.meta.env.DEV) createInspector().attach(cache);
+```
+
+`createInspector({ container?, maxLogEntries?, collapsed? })` mounts the panel (in
+`document.body` by default) and returns `{ attach(cache), detach(), destroy() }`. `attach` moves
+the panel to another cache, for example after recreating it with other budgets, as the demo's
+"Simulate storage pressure" switch does. Keys written before `attach` appear once an event
+mentions them.
 
 ## Server-side rendering
 

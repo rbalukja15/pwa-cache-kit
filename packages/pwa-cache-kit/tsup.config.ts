@@ -1,7 +1,8 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  // The inspector is its own entry point, so the core bundle does not carry it (#16).
+  entry: { index: 'src/index.ts', inspector: 'src/inspector/index.ts' },
   format: ['esm'],
   target: 'es2022',
   platform: 'browser',

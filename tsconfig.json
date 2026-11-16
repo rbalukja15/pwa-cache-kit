@@ -5,7 +5,10 @@
     "types": ["node"],
     // The demo imports the library by name; resolve it to the sources, so lint and typecheck do
     // not depend on a build of dist/.
-    "paths": { "@rbalukja/pwa-cache-kit": ["./packages/pwa-cache-kit/src/index.ts"] }
+    "paths": {
+      "@rbalukja/pwa-cache-kit": ["./packages/pwa-cache-kit/src/index.ts"],
+      "@rbalukja/pwa-cache-kit/inspector": ["./packages/pwa-cache-kit/src/inspector/index.ts"]
+    }
   },
   "include": [
     "packages/*/src",

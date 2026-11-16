@@ -26,7 +26,8 @@ The library is TypeScript, ESM only, built with tsup, and has no runtime depende
 
 ```
 packages/pwa-cache-kit/   the library (npm workspace, published as @rbalukja/pwa-cache-kit)
-  src/index.ts            single public entry point: everything exported here is public API
+  src/index.ts            main public entry point: everything exported here is public API
+  src/inspector/          the in-page inspector, a second entry point (`/inspector`, #16)
   src/                    implementation only, no tests
   test/                   unit tests mirroring src/: src/a/b.ts -> test/a/b.test.ts
   test/conformance/       shared TierAdapter conformance suite and reference tier (#22)

@@ -16,6 +16,12 @@ shows your tickets without a network connection.
   writes the names of this build's files into it; it precaches them on install, serves them
   cache-first and drops the caches of older builds on activate. Ticket requests (`api/`) are left
   to the network, since the cache holds the data.
+- **Cache inspector**: the panel from `@rbalukja/pwa-cache-kit/inspector` shows every read with
+  the tier that served it, and the keys each tier holds. Each ticket is also cached under its own
+  key (when the list comes from the network), so "Show code" is a read you can watch. The
+  "Simulate storage pressure" switch reopens the cache with 4 KB budgets per tier and a two-second
+  IndexedDB sweep, attaches the inspector to it and caches the tickets again, so all three tiers
+  evict.
 - **Installable**: `public/manifest.webmanifest` with SVG and PNG icons.
 
 The service worker registers only in production builds, so the dev server always runs fresh code.
